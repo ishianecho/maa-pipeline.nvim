@@ -90,11 +90,13 @@ function M.setup(options)
     end
   end
   if options.stop_hotkey then
-    local registered = hotkey.register(options.stop_hotkey, stop_task)
-    if not registered then
-      vim.schedule(function()
-        vim.notify("Failed to register MaaPipelineStop hotkey: " .. options.stop_hotkey, vim.log.levels.WARN)
-      end)
+    if jit.os == "Windows" then
+      local registered = hotkey.register(options.stop_hotkey, stop_task)
+      if not registered then
+        vim.schedule(function()
+          vim.notify("Failed to register MaaPipelineStop hotkey: " .. options.stop_hotkey, vim.log.levels.WARN)
+        end)
+      end
     end
   elseif jit.os == "Windows" then
     vim.schedule(function()
