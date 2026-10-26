@@ -1,10 +1,16 @@
+local detect = require("maa-pipeline.detect")
+
 local source = debug.getinfo(1, "S").source:sub(2)
 local plugin_root = vim.fn.fnamemodify(source, ":h:h")
 
 return {
   cmd = { "node", plugin_root .. "/server/dist/maa-pipeline-lsp.mjs" },
-  filetypes = { "maa-pipeline.jsonc" },
-  root_markers = { "interface.json", "interface.jsonc", ".git" },
+  filetypes = { "json", "jsonc" },
+  root_dir = function(bufnr, cb)
+    if detect.is_pipeline_file(vim.api.nvim_buf_get_name(bufnr)) then
+      cb(detect.project_root(bufnr))
+    end
+  end,
   handlers = require("maa-pipeline.handlers"),
   init_options = {
     mode = "auto",

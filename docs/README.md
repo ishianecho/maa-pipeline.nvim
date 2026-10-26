@@ -85,7 +85,7 @@ require("maa-pipeline.nvim").setup({
 
 vim.lsp.config("maa_pipeline", {
   cmd = nil, -- nil keeps the bundled Node.js command; set a list to use another command
-  filetypes = { "maa-pipeline.jsonc" }, -- compound filetype; every Maa JSON file uses JSONC
+  filetypes = { "json", "jsonc" }, -- native JSON filetypes; only pipeline files attach via root_dir gating
   root_markers = { "interface.json", "interface.jsonc", ".git" }, -- project root markers
   init_options = {
     mode = "auto", -- "auto": detect src/MaaCore; "maa": MAA syntax; "framework": MaaFramework syntax

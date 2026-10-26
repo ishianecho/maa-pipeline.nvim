@@ -66,7 +66,7 @@ function M.autoset(bufnr)
   bufnr = bufnr or 0
   local name = vim.api.nvim_buf_get_name(bufnr)
   if M.is_pipeline_file(name) then
-    vim.bo[bufnr].filetype = "maa-pipeline.jsonc"
+    vim.b[bufnr].maa_pipeline = true
     return true
   end
   return false
