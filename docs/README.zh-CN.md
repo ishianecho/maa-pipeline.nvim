@@ -116,6 +116,7 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 | `:MaaPipelineStop` | 停止正在运行的 Maa 任务 |
 | `:MaaPipelineRun` | 运行光标所在的 Maa 任务 |
 | `:MaaPipelineScreenshot` | 选择控制器、截图、裁剪，并保存图片或复制 ROI |
+| `:MaaPipelineTrace` | 在标签页中打开节点追踪视图，底部同时显示运行日志窗口 |
 | `:MaaPipelineLogFilter [expression]` | 使用 Lua 表达式过滤运行日志；空表达式清除过滤 |
 | `:MaaPipelineLogExportJson` | 将过滤后的运行日志导出为 JSON |
 | `:MaaPipelineLogExportText` | 将过滤后的运行日志导出为纯文本 |
@@ -146,6 +147,37 @@ raw and raw:find("recognition", 1, true)
 ```
 
 可用字段：`level`、`source`、`family`、`phase`、`name`、`raw`、`kind`、`ids`、`taskId`、`nodeId`、`recoId`、`actionId`、`wfId`、`reco`、`algorithm`、`text`、`score`、`box`、`action`、`actionDetails`、`details`、`list`、`nested`、`elapsed`，以及原始的 `entry`
+
+### 节点追踪
+
+`:MaaPipelineTrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。
+
+每个执行过的节点显示状态与统计：
+
+- `[hit ]` 节点识别成功（含 `runs`/`hit` 计数与耗时）
+- `[miss]` 节点作为 next 候选被识别过但从未命中
+- `[fail]` 节点失败或中途中断
+- `[run ]` 节点正在执行
+
+从未到达的节点（包括中断后未走到的所有节点）统一列在 `not executed` 段，始终给出完整的流程概览。
+
+追踪缓冲区按键：
+
+| 按键 | 说明 |
+| --- | --- |
+| `<CR>` | 跳转到该节点在 pipeline JSON 中的定义 |
+| `<Tab>` | 打开该节点最近一次识别的详情 |
+| `r` | 从服务器刷新 |
+| `q` | 关闭窗口 |
+
+### 识别详情
+
+在追踪节点上按 `<Tab>`，或在日志中带识别的行上按 `d`，打开一个新标签页，包含：
+
+- 该次识别的原始截图与所有框架标注图（框选、OCR 结果），PNG 保存在 `stdpath("data")/maa-pipeline.nvim/reco/`
+- 文本详情缓冲区：命中与否、算法、box、最优候选（`score`、`text`、`count`、`label`）、`all`/`filtered` 计数与嵌套识别
+
+截图通过 `vim.ui.img`（Kitty）渲染；无图片支持时详情缓冲区中列出文件路径。识别详情在 Maa 实例存活期间可用：任务运行中，或 `runtime.daemon = true` 时任务结束后。
 
 ### 自定义渲染
 

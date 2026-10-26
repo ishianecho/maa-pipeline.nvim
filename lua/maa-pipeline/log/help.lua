@@ -28,6 +28,7 @@ M.buffer = {
   "  f     prompt for a Lua filter expression",
   "  ?     show filter help",
   "  g?    show keymap help",
+  "  d     open recognition detail for the entry on this line",
   "  zc    close fold",
   "  zv    open fold under cursor",
 }

@@ -132,6 +132,14 @@ function M.setup(options)
     end
     run_task_at_cursor(client)
   end, { desc = "Run the Maa task at the cursor", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineTrace", function()
+    local client = current_client()
+    if not client then
+      vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+      return
+    end
+    require("maa-pipeline.trace").show(client.id)
+  end, { desc = "Open the Maa node trace view in a tab", force = true })
   vim.api.nvim_create_user_command("MaaPipelineScreenshot", function()
     local client = current_client()
     if not client then

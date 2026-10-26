@@ -6,6 +6,7 @@ local methods = {
   configure_controller = "maa-pipeline/configureController",
   save_screenshot = "maa-pipeline/saveScreenshot",
   request_input = "maa-pipeline/requestInput",
+  trace = "maa-pipeline/trace",
 }
 
 local log = require("maa-pipeline.log")
@@ -97,6 +98,9 @@ return {
   end,
   [methods.runtime_log] = function(_, result, ctx)
     log.append(ctx.client_id, result)
+  end,
+  [methods.trace] = function(_, result, ctx)
+    require("maa-pipeline.trace").update(ctx.client_id, result)
   end,
   [methods.request_input] = function(_, result, ctx)
     vim.schedule(function()

@@ -120,6 +120,7 @@ while Neovim itself remains unelevated
 | `:MaaPipelineStop` | Stop the running Maa task |
 | `:MaaPipelineRun` | Run the Maa task at the cursor |
 | `:MaaPipelineScreenshot` | Select a controller, take a screenshot, crop it, and save or copy its ROI |
+| `:MaaPipelineTrace` | Open the node trace view in a tab, with the runtime log in a bottom window |
 | `:MaaPipelineLogFilter [expression]` | Filter runtime logs with a Lua expression; an empty expression clears the filter |
 | `:MaaPipelineLogExportJson` | Export filtered runtime logs as JSON |
 | `:MaaPipelineLogExportText` | Export filtered runtime logs as plain text |
@@ -155,6 +156,45 @@ Available fields: `level`, `source`, `family`, `phase`, `name`, `raw`, `kind`,
 `ids`, `taskId`, `nodeId`, `recoId`, `actionId`, `wfId`, `reco`, `algorithm`,
 `text`, `score`, `box`, `action`, `actionDetails`, `details`, `list`, `nested`,
 `elapsed`, and the raw `entry`
+
+### Node Trace
+
+`:MaaPipelineTrace` opens a dedicated tab: the node trace view on top and the
+runtime log buffer in a bottom window. While a task runs, the view refreshes
+live from the runtime notifications; press `r` to refresh manually.
+
+Each executed node shows its status and metrics:
+
+- `[hit ]` the node recognition succeeded (`runs`/`hit` counters and duration)
+- `[miss]` the node was evaluated as a next-list candidate but never matched
+- `[fail]` the node failed or was interrupted mid-run
+- `[run ]` the node is currently executing
+
+Nodes never reached — including everything after an interruption — are listed
+under `not executed`, so a full pipeline outline is always visible.
+
+Keymaps in the trace buffer:
+
+| Key | Description |
+| --- | --- |
+| `<CR>` | jump to the node definition in its pipeline JSON |
+| `<Tab>` | open the recognition detail for the node's latest recognition |
+| `r` | refresh from the server |
+| `q` | close the window |
+
+### Recognition Detail
+
+Press `<Tab>` on a trace node or `d` on a log line with a recognition to open a
+new tab with:
+
+- the raw screenshot of that recognition plus every framework-annotated draw
+  (boxes, OCR results) as PNG files under `stdpath("data")/maa-pipeline.nvim/reco/`
+- a text buffer with hit/miss, algorithm, box, best candidate (`score`, `text`,
+  `count`, `label`), `all`/`filtered` counts, and nested recognitions
+
+Screenshots render through `vim.ui.img` (Kitty); without image support the file
+paths are listed in the detail buffer. Details stay available while the Maa
+instance lives: during a task, or after it when `runtime.daemon = true`.
 
 ### Custom Render
 

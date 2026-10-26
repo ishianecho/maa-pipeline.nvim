@@ -298,6 +298,8 @@ const globalCommandHandlers: Record<string, (args: any[]) => unknown> = {
     await runtime.stop();
     return null;
   },
+  [commands.traceSnapshot]: () => runtime.trace.snapshot(),
+  [commands.recoDetail]: async (args) => runtime.recoDetail(args[0]),
 };
 
 const projectCommandHandlers = {

@@ -14,4 +14,6 @@ export const commands = {
   configureController: "maa-pipeline.configureController",
   switchConfig: "maa-pipeline.switchConfig",
   extractLocale: "maa-pipeline.extractLocale",
+  traceSnapshot: "maa-pipeline.traceSnapshot",
+  recoDetail: "maa-pipeline.recoDetail",
 };

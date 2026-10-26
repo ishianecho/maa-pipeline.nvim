@@ -149,3 +149,53 @@ test("reuses a daemon instance while the controller type is unchanged", async (t
   assert.equal(second.handle, "handle");
   assert.deepEqual(calls, ["fetchConstants", "setupInstance"]);
 });
+
+test("feeds trace notifications to the collector and emits trace snapshots", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const notifications = [];
+  const client = new RuntimeClient({
+    sendNotification: (method: string, params: any) => notifications.push({ method, params }),
+  } as any);
+
+  (client as any).trace.ingest("inst", {
+    msg: "PipelineNode.Starting",
+    task_id: 1,
+    node_id: 3,
+    name: "NodeA",
+  });
+  const handled = (client as any).trace.ingest("inst", {
+    msg: "PipelineNode.Succeeded",
+    task_id: 1,
+    node_id: 3,
+    name: "NodeA",
+  });
+
+  assert.equal(handled, true);
+  const traces = notifications.filter((item) => item.method === "maa-pipeline/trace");
+  assert.ok(traces.length >= 1);
+  assert.equal(traces.at(-1).params.entries[0].name, "NodeA");
+  assert.equal(traces.at(-1).params.entries[0].status, "succeeded");
+});
+
+test("requests recognition details against the traced instance", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const requests = [];
+  const client = new RuntimeClient({ sendNotification: () => {} } as any);
+  (client as any).rpc = {
+    sendRequest: async (...args) => {
+      requests.push(args);
+      return {
+        info: { name: "NodeA", algorithm: "OCR", hit: true, box: null, detail: null },
+        raw: "",
+        draws: [],
+      };
+    },
+  };
+
+  (client as any).trace.ingest("inst", { msg: "Task.Starting", task_id: 1, entry: "Entry" });
+  await new Promise((resolve) => setImmediate(resolve));
+  const detail = await (client as any).recoDetail(7);
+
+  assert.equal(detail.info.name, "NodeA");
+  assert.deepEqual(requests.at(-1).slice(1), ["getRecoDetail", ["inst", 7]]);
+});

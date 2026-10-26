@@ -397,6 +397,7 @@ local function ensure_buffer(client_id)
       filter = M.filter,
       filter_help = M.filter_help,
       keymap_help = M.keymap_help,
+      reco_detail = M.open_reco,
     })
   end
   vim.b[buffer].maa_pipeline_client_id = client_id
@@ -518,6 +519,11 @@ function M.append(client_id, result)
   show_buffer(buffer)
 end
 
+function M.show(client_id)
+  local buffer = ensure_buffer(client_id)
+  show_buffer(buffer)
+end
+
 function M.set_filter(filter)
   state.filter = filter or {}
   local buffer = ensure_buffer(0)
@@ -596,6 +602,31 @@ function M.click_filter()
       return
     end
   end
+end
+
+function M.open_reco()
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local entry
+  for offset = 0, 10 do
+    entry = state.line_entries[row - offset]
+    if entry and field(entry.ids, "recoId") then
+      break
+    end
+    entry = nil
+  end
+  local reco_id = entry and field(entry.ids, "recoId")
+  if not reco_id then
+    vim.notify("No recognition on this line", vim.log.levels.WARN)
+    return
+  end
+  local buffer = vim.fn.bufnr(buffer_name)
+  local client_id = buffer >= 0 and vim.b[buffer].maa_pipeline_client_id or nil
+  local client = client_id and vim.lsp.get_client_by_id(client_id) or nil
+  if not client then
+    vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+    return
+  end
+  require("maa-pipeline.reco").show(client, reco_id)
 end
 
 function M.export(format)

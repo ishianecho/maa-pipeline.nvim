@@ -21,6 +21,7 @@ import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc"
 import { resolveAgent, runtimeAgents } from "./agent.ts";
 import { encodeBase64Json, formatByteSize, pngDimensions } from "./utils.ts";
 import { formatRuntimeLogLine, parseLogLine } from "./log.ts";
+import { TraceCollector, type RecoDetailResult } from "./trace.ts";
 import type {
   ActiveTask,
   AgentProcess,
@@ -120,6 +121,16 @@ export class RuntimeClient {
   agentOptions = new Map<string, boolean>();
   controllerType: string | null = null;
   daemonHandle: string | null = null;
+  readonly trace = new TraceCollector({
+    getKnownTasks: async () => {
+      const inst = this.active?.handle ?? this.daemonHandle ?? this.trace.currentInst();
+      if (!inst) return null;
+      return this.request<string[]>("getKnownTasks", inst).catch(() => null);
+    },
+    onChange: (snapshot) => {
+      this.connection.sendNotification("maa-pipeline/trace", snapshot);
+    },
+  });
 
   constructor(connection: RuntimeConnection, options: RuntimeOptions = {}) {
     this.connection = connection;
@@ -333,6 +344,15 @@ export class RuntimeClient {
     });
     rpc.onRequest(subToHostReq, async (method, args) => {
       if (method === "pushNotify") {
+        try {
+          this.trace.ingest(String(args[0]), args[1]);
+        } catch {
+          this.log({
+            level: "warn",
+            message: "Failed to process a Maa trace notification",
+            source: "maa-runtime",
+          });
+        }
         const source = "maa-runtime";
         let body: string;
         try {
@@ -716,6 +736,15 @@ export class RuntimeClient {
       }
       this.running = null;
     }
+  }
+
+  recoDetail(recoId: number): Promise<RecoDetailResult> {
+    const inst = this.active?.handle ?? this.daemonHandle ?? this.trace.currentInst();
+    if (!inst)
+      throw new Error(
+        "No live Maa instance; recognition details require a running task or daemon mode",
+      );
+    return this.request<RecoDetailResult>("getRecoDetail", inst, recoId);
   }
 
   async stop() {

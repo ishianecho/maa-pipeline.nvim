@@ -26,6 +26,7 @@ export const notifications = {
   configureController: "maa-pipeline/configureController",
   saveScreenshot: "maa-pipeline/saveScreenshot",
   requestInput: "maa-pipeline/requestInput",
+  trace: "maa-pipeline/trace",
 };
 
 function lens(range, title, command = commands.noop, args = []) {

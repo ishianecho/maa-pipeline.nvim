@@ -7,6 +7,7 @@ local keys = {
   keymap_help = "g?",
   close_fold = "zc",
   open_fold = "zv",
+  reco_detail = "d",
 }
 
 local function valid(value)
@@ -63,6 +64,13 @@ function M.setup(buffer, actions)
       buffer = buffer,
       silent = true,
       desc = "Maa log: open fold under cursor",
+    })
+  end
+  if valid(keys.reco_detail) then
+    vim.keymap.set("n", keys.reco_detail, actions.reco_detail, {
+      buffer = buffer,
+      silent = true,
+      desc = "Maa log: open recognition detail",
     })
   end
 end
