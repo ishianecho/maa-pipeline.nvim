@@ -178,6 +178,9 @@ importers:
       '@nekosu/maa-server-proto':
         specifier: 0.3.0
         version: 0.3.0
+      '@nekosu/maa-types':
+        specifier: 0.3.0
+        version: 0.3.0
       '@nekosu/maa-version-manager':
         specifier: 1.1.0
         version: 1.1.0

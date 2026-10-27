@@ -20,6 +20,7 @@
     "@nekosu/maa-pipeline-manager": "1.1.0",
     "@nekosu/maa-server": "0.3.0",
     "@nekosu/maa-server-proto": "0.3.0",
+    "@nekosu/maa-types": "0.3.0",
     "@nekosu/maa-version-manager": "1.1.0",
     "jsonc-parser": "^3.3.1",
     "pacote": "^21.5.1",
