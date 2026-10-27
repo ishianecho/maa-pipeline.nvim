@@ -126,6 +126,35 @@ local function open_reco()
   require("maa-pipeline.reco").show(client, entry.lastRecoId)
 end
 
+local function rerun_node()
+  local entry = current_entry()
+  if not entry then
+    return
+  end
+  local client = current_client()
+  if not client then
+    vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+    return
+  end
+  client:request("workspace/executeCommand", {
+    command = "maa-pipeline.runTask",
+    arguments = { client.config.root_dir, entry.name },
+  }, function(error)
+    vim.schedule(function()
+      if error then
+        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
+      end
+    end)
+  end)
+end
+
+local function sync_screenshot(snapshot)
+  local client = current_client()
+  if client then
+    require("maa-pipeline.screenshot").set_running(client, snapshot and snapshot.running == true)
+  end
+end
+
 local function refresh()
   local client = current_client()
   if not client then
@@ -142,6 +171,7 @@ local function refresh()
         return
       end
       state.snapshot = result
+      sync_screenshot(result)
       M.render()
     end)
   end)
@@ -171,6 +201,7 @@ local function ensure_buffer()
     keymap.setup("trace", buffer, {
       jump = jump_to_node,
       reco = open_reco,
+      rerun = rerun_node,
       refresh = refresh,
       close = function()
         pcall(vim.cmd, "close")
@@ -292,6 +323,7 @@ end
 function M.update(client_id, snapshot)
   state.client_id = client_id
   state.snapshot = snapshot
+  sync_screenshot(snapshot)
   local buffer = vim.fn.bufnr(buffer_name)
   if buffer >= 0 and vim.fn.bufwinid(buffer) >= 0 and not state.help then
     M.render()

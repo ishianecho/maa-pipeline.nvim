@@ -12,7 +12,6 @@ local state = {
   help = false,
   line_entries = {},
   line_tokens = {},
-  line_kinds = {},
 }
 
 local render
@@ -322,14 +321,6 @@ end
 
 local default_render = { render = render_entry, render_details = render_entry_details }
 
-local function configure_window(win)
-  local window = vim.wo[win]
-  window.foldmethod = "expr"
-  window.foldexpr = "v:lua.require('maa-pipeline.log').foldexpr()"
-  window.foldlevel = 0
-  window.foldenable = true
-end
-
 local function make_filter(expression)
   local factory, factory_error = load(
     string.format(
@@ -379,19 +370,12 @@ local function ensure_buffer(client_id)
     vim.bo[buffer].bufhidden = "hide"
     vim.bo[buffer].swapfile = false
     vim.bo[buffer].filetype = "log"
-    vim.api.nvim_create_autocmd("BufWinEnter", {
-      buffer = buffer,
-      callback = function()
-        configure_window(vim.api.nvim_get_current_win())
-      end,
-    })
     keymap.setup("log", buffer, {
       click = M.click_filter,
       filter = M.filter,
       help = M.toggle_help,
       reco = M.open_reco,
-      close = "zc",
-      open = "zv",
+      detail = M.show_detail,
     })
   end
   vim.b[buffer].maa_pipeline_client_id = client_id
@@ -423,7 +407,7 @@ local function byte_range(parts, start_index, finish_index)
   return start, finish
 end
 
-local function append_line(buffer, entry, line, parts, segments, line_kind)
+local function append_line(buffer, entry, line, parts, segments)
   line = line:gsub("[\r\n]", " ")
   local count = vim.api.nvim_buf_line_count(buffer)
   local start = count
@@ -434,7 +418,6 @@ local function append_line(buffer, entry, line, parts, segments, line_kind)
   end
   local row = start + 1
   state.line_entries[row] = entry
-  state.line_kinds[row] = line_kind
   state.line_tokens[row] = nil
   vim.bo[buffer].modifiable = true
   vim.api.nvim_buf_set_lines(buffer, start, finish, false, { line })
@@ -464,12 +447,7 @@ end
 
 local function append_entry(buffer, entry)
   local parts, segments = render.render(entry)
-  local details = render.render_details and render.render_details(entry) or {}
-  local line_kind = #details > 0 and "entry" or "plain"
-  append_line(buffer, entry, table.concat(parts, ""), parts, segments, line_kind)
-  for _, detail in ipairs(details) do
-    append_line(buffer, nil, detail, { detail }, {}, "detail")
-  end
+  append_line(buffer, entry, table.concat(parts, ""), parts, segments)
 end
 
 local function show_buffer(buffer)
@@ -479,9 +457,9 @@ local function show_buffer(buffer)
       return
     end
   end
-  vim.cmd("botright 10split")
+  vim.cmd("botright split")
   vim.api.nvim_win_set_buf(0, buffer)
-  configure_window(0)
+  vim.api.nvim_win_set_height(0, math.floor(vim.o.lines / 2))
 end
 
 function M.use(new_render)
@@ -497,7 +475,6 @@ function M.toggle_help()
   local buffer = ensure_buffer(0)
   state.line_entries = {}
   state.line_tokens = {}
-  state.line_kinds = {}
   local lines = help.lines("Maa pipeline log", "log", { help.filter_reference })
   vim.bo[buffer].modifiable = true
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
@@ -551,7 +528,6 @@ function M.set_filter(filter)
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
   state.line_entries = {}
   state.line_tokens = {}
-  state.line_kinds = {}
   for _, entry in ipairs(state.entries) do
     pcall(function()
       if matches(entry, state.filter) then
@@ -561,15 +537,66 @@ function M.set_filter(filter)
   end
 end
 
-function M.foldexpr()
-  local kind = state.line_kinds[vim.v.lnum]
-  if kind == "entry" then
-    return ">1"
+local detail_buffer
+
+local function ensure_detail_buffer()
+  if detail_buffer and vim.api.nvim_buf_is_valid(detail_buffer) then
+    return detail_buffer
   end
-  if kind == "detail" then
-    return "1"
+  detail_buffer = vim.api.nvim_create_buf(false, true)
+  vim.bo[detail_buffer].buftype = "nofile"
+  vim.bo[detail_buffer].bufhidden = "hide"
+  vim.bo[detail_buffer].swapfile = false
+  vim.bo[detail_buffer].filetype = "log"
+  vim.keymap.set("n", "q", function()
+    local win = vim.fn.bufwinid(detail_buffer)
+    if win >= 0 then
+      vim.api.nvim_win_close(win, true)
+    end
+  end, {
+    buffer = detail_buffer,
+    silent = true,
+    desc = "Maa log: close the detail popup",
+  })
+  return detail_buffer
+end
+
+function M.show_detail()
+  local entry = state.line_entries[vim.api.nvim_win_get_cursor(0)[1]]
+  if not entry then
+    vim.notify("No log entry on this line", vim.log.levels.WARN)
+    return
   end
-  return "0"
+  local lines = render.render_details and render.render_details(entry) or {}
+  if #lines == 0 then
+    vim.notify("No details for this entry", vim.log.levels.WARN)
+    return
+  end
+  local buffer = ensure_detail_buffer()
+  vim.bo[buffer].modifiable = true
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+  vim.bo[buffer].modifiable = false
+  local log_buffer = vim.fn.bufnr(buffer_name)
+  local log_win = log_buffer >= 0 and vim.fn.win_findbuf(log_buffer)[1] or nil
+  local anchor_win_width = log_win and vim.api.nvim_win_get_width(log_win) or vim.o.columns
+  local width = 40
+  for _, line in ipairs(lines) do
+    width = math.max(width, math.min(vim.fn.strdisplaywidth(line), anchor_win_width - 2))
+  end
+  width = math.min(width, anchor_win_width - 2)
+  local height = math.min(#lines, vim.o.lines - 4)
+  local config = {
+    relative = log_win and "win" or "editor",
+    win = log_win,
+    anchor = "SE",
+    row = log_win and vim.api.nvim_win_get_height(log_win) or vim.o.lines,
+    col = log_win and anchor_win_width or vim.o.columns,
+    width = width,
+    height = height,
+  }
+  local existing = vim.fn.bufwinid(buffer)
+  local win = existing >= 0 and existing or vim.api.nvim_open_win(buffer, false, config)
+  vim.api.nvim_win_set_config(win, config)
 end
 
 function M.filter(expression)

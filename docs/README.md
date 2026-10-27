@@ -13,7 +13,7 @@ Neovim support for MaaFramework pipelines, reusing the parser and index from
 - Filetype detection for Maa JSON/JSONC pipelines
 - Run MaaFramework tasks directly from Neovim
 - Runtime logs with native `ft=log` highlighting, source/kind highlights,
-  Lua filtering, folding, and JSON or text export
+  Lua filtering, on-demand entry details, and JSON or text export
 - Screenshot cropping with ImageCropper
 
 ## Install
@@ -76,8 +76,7 @@ require("maa-pipeline.nvim").setup({
       filter = "f", -- prompt for a Lua filter expression; false or "" disables it
       help = "g?", -- toggle the in-buffer help view; false or "" disables it
       reco = "d", -- open recognition detail; false or "" disables it
-      close = "zc", -- close the fold under the cursor; false or "" disables it
-      open = "zv", -- open the fold under the cursor; false or "" disables it
+      detail = "<Tab>", -- show the details of the entry under the cursor; false or "" disables it
     },
     render = nil, -- custom render, see Going Further
   },
@@ -85,7 +84,8 @@ require("maa-pipeline.nvim").setup({
     key = {
       jump = "<CR>", -- jump to the node definition; false or "" disables it
       reco = "d", -- open recognition detail; false or "" disables it
-      refresh = "r", -- refresh the snapshot; false or "" disables it
+      rerun = "r", -- rerun the task from this node; false or "" disables it
+      refresh = "R", -- refresh the snapshot; false or "" disables it
       close = "q", -- close the window; false or "" disables it
       help = "g?", -- toggle the in-buffer help view; false or "" disables it
     },
@@ -100,8 +100,7 @@ vim.lsp.config("maa_pipeline", {
     mode = "auto", -- "auto": detect src/MaaCore; "maa": MAA syntax; "framework": MaaFramework syntax
     locale = "en", -- "en": English; "zh": Chinese diagnostics and hover text
     runtime = {
-      data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- MaaFramework downloads and logs
-      version = "latest", -- "latest" resolves to the newest version; an exact semver pins it
+      data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- runtime logs
       timeout = 60000, -- controller and Agent connection timeout in milliseconds; -1 disables it
       debug_mode = true, -- write MaaFramework debug logs
       save_draw = false, -- save annotated recognition drawings to `<data_dir>/logs/vision`
@@ -175,7 +174,12 @@ Available fields: `level`, `source`, `family`, `phase`, `name`, `raw`, `kind`,
 `:MaaPipelineTrace` opens a dedicated tab: the node trace view on top and the
 runtime log buffer in a bottom window. The tab also opens automatically
 whenever a task starts. While a task runs, the view refreshes
-live from the runtime notifications; press `r` to refresh manually.
+live from the runtime notifications; press `r` to refresh manually. While a
+task runs, a live view is shown in a window to the right of the log window and
+refreshed about once per second: the latest recognition's annotated image (ROI
+and result boxes, OCR results), or the raw controller screenshot before the
+first recognition. It keeps the last frame once the task finishes (requires
+terminal image support).
 
 Each executed node shows its status and metrics:
 
@@ -201,7 +205,8 @@ help view listing the currently configured keys):
 | --- | --- |
 | `<CR>` | jump to the node definition in its pipeline JSON |
 | `d` | open the recognition detail for the node's latest recognition |
-| `r` | refresh from the server |
+| `r` | rerun the task from this node |
+| `R` | refresh from the server |
 | `q` | close the window |
 | `g?` | toggle the help view |
 
@@ -257,5 +262,8 @@ require("maa-pipeline.log").use({
 - Neovim runs the Lua client and starts the bundled Node.js LSP server
 - The LSP server parses projects with `@nekosu/maa-pipeline-manager` and starts
   a separate `maa-runtime` process
-- `maa-runtime` uses `@nekosu/maa-server` to create controller, resource, and
-  task instances, then launches external agents declared in `interface.json`
+- `maa-runtime` uses the MaaFramework shipped inside the project (a
+  `node_modules/@maaxyz/maa-node` dependency, or a `MaaNode.node` deployment
+  found in the project tree) and `@nekosu/maa-server` to create controller,
+  resource, and task instances, then launches external agents declared in
+  `interface.json`

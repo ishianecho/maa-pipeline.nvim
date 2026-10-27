@@ -10,7 +10,7 @@
 - LSP 功能：补全、悬停提示、跳转与引用、诊断、Code Lens、代码操作、内联提示、文档链接、工作区符号和颜色支持
 - Maa JSON/JSONC Pipeline 的文件类型检测
 - 直接运行 MaaFramework 任务
-- 运行日志支持原生 `ft=log` 高亮、来源和类型高亮、Lua 过滤、折叠、JSON 或文本导出
+- 运行日志支持原生 `ft=log` 高亮、来源和类型高亮、Lua 过滤、按需查看条目详情、JSON 或文本导出
 - 使用 ImageCropper 进行截图裁剪
 
 ## 安装
@@ -73,8 +73,7 @@ require("maa-pipeline.nvim").setup({
       filter = "f", -- 输入 Lua 过滤表达式；false 或 "" 表示不注册
       help = "g?", -- 切换缓冲区内帮助视图；false 或 "" 表示不注册
       reco = "d", -- 打开识别详情；false 或 "" 表示不注册
-      close = "zc", -- 折叠光标处条目；false 或 "" 表示不注册
-      open = "zv", -- 展开光标处条目；false 或 "" 表示不注册
+      detail = "<Tab>", -- 查看光标处条目的详情；false 或 "" 表示不注册
     },
     render = nil, -- 自定义渲染，见“深入”
   },
@@ -82,7 +81,8 @@ require("maa-pipeline.nvim").setup({
     key = {
       jump = "<CR>", -- 跳转到节点定义；false 或 "" 表示不注册
       reco = "d", -- 打开识别详情；false 或 "" 表示不注册
-      refresh = "r", -- 刷新快照；false 或 "" 表示不注册
+      rerun = "r", -- 从该节点重新运行任务；false 或 "" 表示不注册
+      refresh = "R", -- 刷新快照；false 或 "" 表示不注册
       close = "q", -- 关闭窗口；false 或 "" 表示不注册
       help = "g?", -- 切换缓冲区内帮助视图；false 或 "" 表示不注册
     },
@@ -97,8 +97,7 @@ vim.lsp.config("maa_pipeline", {
     mode = "auto", -- "auto"：检测 src/MaaCore；"maa"：使用 MAA 语法；"framework"：使用 MaaFramework 语法
     locale = "en", -- "en"：英文；"zh"：中文诊断和悬停文本
     runtime = {
-      data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- MaaFramework 下载文件和日志目录
-      version = "latest", -- "latest" 解析为最新版本；填写精确 semver 可固定版本
+      data_dir = vim.fn.stdpath("data") .. "/maa-pipeline.nvim", -- 运行日志目录
       timeout = 60000, -- 控制器和 Agent 连接超时，单位毫秒；-1 表示不限制
       debug_mode = true, -- 写入 MaaFramework 调试日志
       save_draw = false, -- 保存识别标注图到 `<data_dir>/logs/vision`
@@ -163,7 +162,7 @@ raw and raw:find("recognition", 1, true)
 
 ### 节点追踪
 
-`:MaaPipelineTrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务开始时该标签页也会自动打开。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。
+`:MaaPipelineTrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务开始时该标签页也会自动打开。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。任务运行期间，日志窗口右侧会显示实时画面，约每秒刷新一次：优先显示最近一次识别的标注图（ROI 与结果框、OCR 结果），首次识别前显示原始截图。任务结束后保留最后一帧（需要终端图片支持）。
 
 每个执行过的节点显示状态与统计：
 
@@ -180,7 +179,8 @@ raw and raw:find("recognition", 1, true)
 | --- | --- |
 | `<CR>` | 跳转到该节点在 pipeline JSON 中的定义 |
 | `d` | 打开该节点最近一次识别的详情 |
-| `r` | 从服务器刷新 |
+| `r` | 从该节点重新运行任务 |
+| `R` | 从服务器刷新 |
 | `q` | 关闭窗口 |
 | `g?` | 切换帮助视图 |
 
@@ -228,5 +228,6 @@ require("maa-pipeline.log").use({
 - Neovim 运行 Lua 客户端，并启动内置的 Node.js LSP 服务端
 - LSP 服务端使用 `@nekosu/maa-pipeline-manager` 解析项目，并启动独立的
   `maa-runtime` 子进程
-- `maa-runtime` 使用 `@nekosu/maa-server` 创建控制器、资源和任务实例，
-  并启动 `interface.json` 里声明的外置 agent
+- `maa-runtime` 使用项目自带的 MaaFramework（`node_modules/@maaxyz/maa-node`
+  依赖，或在项目内找到的 `MaaNode.node` 部署）和 `@nekosu/maa-server`
+  创建控制器、资源和任务实例，并启动 `interface.json` 里声明的外置 agent
