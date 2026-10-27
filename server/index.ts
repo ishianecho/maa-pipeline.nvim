@@ -23,6 +23,7 @@ import {
   resolveCompletion,
   symbols,
   syntaxDiagnostics,
+  taskNames,
 } from "./features.ts";
 import {
   codeActions,
@@ -300,6 +301,10 @@ const globalCommandHandlers: Record<string, (args: any[]) => unknown> = {
   },
   [commands.traceSnapshot]: () => runtime.trace.snapshot(),
   [commands.recoDetail]: async (args) => runtime.recoDetail(args[0]),
+  [commands.cleanVision]: async () => {
+    await runtime.cleanVision();
+    return null;
+  },
 };
 
 const projectCommandHandlers = {
@@ -397,6 +402,7 @@ const projectCommandHandlers = {
       });
     return null;
   },
+  [commands.listTasks]: ({ project, args }) => taskNames(project, args[1]),
   [commands.runTask]: ({ project, args }) => {
     if (!runtime.controllerReady(project)) {
       connection.sendNotification(notifications.configureController, {

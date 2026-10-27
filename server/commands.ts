@@ -4,6 +4,7 @@ export const commands = {
   showReferences: "maa-pipeline.showReferences",
   evaluateTask: "maa-pipeline.evaluateTask",
   runTask: "maa-pipeline.runTask",
+  listTasks: "maa-pipeline.listTasks",
   stopTask: "maa-pipeline.stopTask",
   screenShot: "maa-pipeline.takeScreenshot",
   saveScreenshot: "maa-pipeline.saveScreenshot",
@@ -16,4 +17,5 @@ export const commands = {
   extractLocale: "maa-pipeline.extractLocale",
   traceSnapshot: "maa-pipeline.traceSnapshot",
   recoDetail: "maa-pipeline.recoDetail",
+  cleanVision: "maa-pipeline.cleanVision",
 };

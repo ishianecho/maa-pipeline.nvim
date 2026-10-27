@@ -98,6 +98,12 @@ return {
   end,
   [methods.runtime_log] = function(_, result, ctx)
     log.append(ctx.client_id, result)
+    local entry = result.entry
+    if entry and entry.family == "Task" and entry.phase == "Starting" then
+      vim.schedule(function()
+        require("maa-pipeline.trace").show(ctx.client_id)
+      end)
+    end
   end,
   [methods.trace] = function(_, result, ctx)
     require("maa-pipeline.trace").update(ctx.client_id, result)

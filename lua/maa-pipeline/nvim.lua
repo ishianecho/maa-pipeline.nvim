@@ -55,6 +55,46 @@ local function run_task_at_cursor(client)
   end)
 end
 
+local function pick_and_run_task(client)
+  local root = detect.project_root(0)
+  local file = vim.api.nvim_buf_get_name(0)
+  if not root then
+    vim.notify("No Maa project found for the current buffer", vim.log.levels.WARN)
+    return
+  end
+  if file == "" then
+    vim.notify("The current buffer has no file", vim.log.levels.WARN)
+    return
+  end
+  client:request("workspace/executeCommand", {
+    command = "maa-pipeline.listTasks",
+    arguments = { root, file },
+  }, function(error, tasks)
+    vim.schedule(function()
+      if error then
+        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
+        return
+      end
+      local names = {}
+      for _, name in ipairs(tasks or {}) do
+        if type(name) == "string" and not vim.tbl_contains(names, name) then
+          table.insert(names, name)
+        end
+      end
+      table.sort(names)
+      if #names == 0 then
+        vim.notify("No Maa tasks found in this file", vim.log.levels.WARN)
+        return
+      end
+      vim.ui.select(names, { prompt = "Maa task: " }, function(choice)
+        if choice then
+          execute(client, "maa-pipeline.runTask", { root, choice })
+        end
+      end)
+    end)
+  end)
+end
+
 local function stop_task()
   local client = current_client()
   if not client then
@@ -135,6 +175,14 @@ function M.setup(options)
     end
     run_task_at_cursor(client)
   end, { desc = "Run the Maa task at the cursor", force = true })
+  vim.api.nvim_create_user_command("MaaPipelinePickRun", function()
+    local client = current_client()
+    if not client then
+      vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+      return
+    end
+    pick_and_run_task(client)
+  end, { desc = "Pick a Maa task and run it", force = true })
   vim.api.nvim_create_user_command("MaaPipelineTrace", function()
     local client = current_client()
     if not client then
@@ -143,6 +191,14 @@ function M.setup(options)
     end
     require("maa-pipeline.trace").show(client.id)
   end, { desc = "Open the Maa node trace view in a tab", force = true })
+  vim.api.nvim_create_user_command("MaaPipelineVisionClean", function()
+    local client = current_client()
+    if not client then
+      vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+      return
+    end
+    execute(client, "maa-pipeline.cleanVision", {})
+  end, { desc = "Delete saved vision screenshots under the runtime data directory", force = true })
   vim.api.nvim_create_user_command("MaaPipelineScreenshot", function()
     local client = current_client()
     if not client then

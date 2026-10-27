@@ -820,6 +820,18 @@ export function symbols(project, query) {
   );
 }
 
+export function taskNames(project, file) {
+  const key = file ? absolutePath(file) : null;
+  return uniqueInfos(project.bundle.info.layer.mergedAllDecls)
+    .filter(
+      (decl) =>
+        decl.type === "task.decl" &&
+        !decl.task.startsWith("$") &&
+        (!key || absolutePath(decl.file) === key),
+    )
+    .map((decl) => decl.task);
+}
+
 export function documentColors(project, document) {
   const current = context(project, document, { line: 0, character: 0 });
   if (!current) return [];

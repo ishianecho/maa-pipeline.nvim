@@ -4,35 +4,20 @@ local function exists(path)
   return vim.uv.fs_stat(path) ~= nil
 end
 
-local function is_file(path)
-  local stat = vim.uv.fs_stat(path)
-  return stat and stat.type == "file"
-end
-
-function M.interface_file(root)
-  for _, name in ipairs({ "interface.json", "interface.jsonc" }) do
-    local file = root .. "/" .. name
-    if is_file(file) then
-      return file
-    end
-  end
-end
-
 function M.project_root(bufnr)
   local name = vim.api.nvim_buf_get_name(bufnr or 0)
   if name == "" then
     return vim.fn.getcwd()
   end
-  local start = vim.fs.dirname(name)
   local found = vim.fs.find({ "interface.json", "interface.jsonc" }, {
-    path = start,
+    path = vim.fs.dirname(name),
     upward = true,
     type = "file",
   })
   if #found > 0 then
     return vim.fs.dirname(found[1])
   end
-  return start
+  return vim.fs.dirname(name)
 end
 
 function M.is_maa_project(root)

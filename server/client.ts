@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -776,6 +776,11 @@ export class RuntimeClient {
     } catch {
       return null;
     }
+  }
+
+  async cleanVision() {
+    if (!this.options.dataDir) throw new Error("init_options.runtime.data_dir is required");
+    await rm(path.join(this.options.dataDir, "logs", "vision"), { recursive: true, force: true });
   }
 
   async stop() {
