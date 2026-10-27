@@ -31,6 +31,7 @@ export interface RuntimeOptions {
   debug_mode?: boolean;
   save_draw?: boolean;
   save_on_error?: boolean;
+  reco_image_cache_limit?: number;
   locale?: string;
   daemon?: boolean;
 }

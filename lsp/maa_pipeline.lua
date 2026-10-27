@@ -22,7 +22,8 @@ return {
       debug_mode = true,
       save_draw = false,
       save_on_error = true,
-      daemon = false,
+      reco_image_cache_limit = 64,
+      daemon = true,
     },
   },
 }

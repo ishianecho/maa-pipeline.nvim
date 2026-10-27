@@ -94,9 +94,12 @@ test("logs failed external agents and reports them stopped to the runtime", asyn
   const RuntimeClient = await loadRuntimeClient(t);
   const logs = [];
   const requests = [];
-  const client = new RuntimeClient({
-    sendNotification: (_method: string, params: any) => logs.push(params),
-  } as any);
+  const client = new RuntimeClient(
+    {
+      sendNotification: (_method: string, params: any) => logs.push(params),
+    } as any,
+    { daemon: false },
+  );
   (client as any).rpc = { sendRequest: async (...args) => requests.push(args) };
   client.agentOptions.set(process.execPath, false);
 
@@ -197,5 +200,5 @@ test("requests recognition details against the traced instance", async (t) => {
   const detail = await (client as any).recoDetail(7);
 
   assert.equal(detail.info.name, "NodeA");
-  assert.deepEqual(requests.at(-1).slice(1), ["getRecoDetail", ["inst", 7]]);
+  assert.deepEqual(requests.at(-1).slice(1), ["getRecoDetail", ["inst", "7"]]);
 });

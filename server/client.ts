@@ -19,9 +19,9 @@ import {
 import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc";
 
 import { resolveAgent, runtimeAgents } from "./agent.ts";
-import { encodeBase64Json, formatByteSize, pngDimensions } from "./utils.ts";
+import { encodeBase64Json, formatByteSize, jpegDimensions, pngDimensions } from "./utils.ts";
 import { formatRuntimeLogLine, parseLogLine } from "./log.ts";
-import { TraceCollector, type RecoDetailResult } from "./trace.ts";
+import { TraceCollector, type RecoDetailInfo, type RecoDetailResult } from "./trace.ts";
 import type {
   ActiveTask,
   AgentProcess,
@@ -107,6 +107,7 @@ export class RuntimeClient {
     debugMode: boolean;
     saveDraw: boolean;
     saveOnError: boolean;
+    recoImageCacheLimit: number;
     locale: string;
     daemon: boolean;
   };
@@ -137,8 +138,9 @@ export class RuntimeClient {
       debugMode: options.debug_mode ?? true,
       saveDraw: options.save_draw ?? false,
       saveOnError: options.save_on_error ?? true,
+      recoImageCacheLimit: options.reco_image_cache_limit ?? 64,
       locale: options.locale === "zh" ? "zh" : "en",
-      daemon: options.daemon ?? false,
+      daemon: options.daemon ?? true,
     };
   }
 
@@ -255,6 +257,7 @@ export class RuntimeClient {
         debugMode: this.options.debugMode,
         saveDraw: this.options.saveDraw,
         saveOnError: this.options.saveOnError,
+        recoImageCacheLimit: this.options.recoImageCacheLimit,
       }),
     ];
     const elevated = process.platform === "win32" && !(await this.isAdmin());
@@ -733,13 +736,46 @@ export class RuntimeClient {
     }
   }
 
-  recoDetail(recoId: number): Promise<RecoDetailResult> {
+  async recoDetail(recoId: number): Promise<RecoDetailResult> {
     const inst = this.active?.handle ?? this.daemonHandle ?? this.trace.currentInst();
     if (!inst)
       throw new Error(
         "No live Maa instance; recognition details require a running task or daemon mode",
       );
-    return this.request<RecoDetailResult>("getRecoDetail", inst, recoId);
+    const result = await this.request<{
+      info: RecoDetailInfo;
+      raw: string;
+      draws: string[];
+    } | null>("getRecoDetail", inst, String(recoId));
+    if (!result) throw new Error(`No recognition detail retained for ${recoId}`);
+    const images: string[] = [];
+    for (const draw of result.draws ?? []) {
+      const image = await this.toPng(draw);
+      if (image) images.push(image);
+    }
+    if (images.length === 0 && result.raw) {
+      const raw = await this.toPng(result.raw);
+      if (raw) images.push(raw);
+    }
+    return { info: result.info, images };
+  }
+
+  private async toPng(dataUrl: string): Promise<string | null> {
+    const marker = "base64,";
+    const index = dataUrl.indexOf(marker);
+    const base64 = index >= 0 ? dataUrl.slice(index + marker.length) : dataUrl;
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length === 0) return null;
+    if (buffer[0] === 0x89 && buffer[1] === 0x50) return dataUrl;
+    const size =
+      buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 ? jpegDimensions(buffer) : null;
+    if (!size) return null;
+    try {
+      const png = await this.request<string>("resize", base64, size.width, size.height);
+      return `data:image/png;base64,${png}`;
+    } catch {
+      return null;
+    }
   }
 
   async stop() {

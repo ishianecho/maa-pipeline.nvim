@@ -135,6 +135,19 @@ export function pngDimensions(image: string) {
   };
 }
 
+export function jpegDimensions(buffer: Buffer): { width: number; height: number } | null {
+  let offset = 2;
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xff) return null;
+    const marker = buffer[offset + 1];
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { width: buffer.readUInt16BE(offset + 7), height: buffer.readUInt16BE(offset + 5) };
+    }
+    offset += 2 + buffer.readUInt16BE(offset + 2);
+  }
+  return null;
+}
+
 export async function findRepositoryRoot(start: string): Promise<string | null> {
   let dir = path.resolve(start);
   while (true) {
