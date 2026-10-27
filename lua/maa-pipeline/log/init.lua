@@ -1,7 +1,7 @@
 local M = {}
 
-local help = require("maa-pipeline.log.help")
-local keymap = require("maa-pipeline.log.keymap")
+local help = require("maa-pipeline.help")
+local keymap = require("maa-pipeline.keymap")
 
 local buffer_name = "maa-pipeline://runtime"
 local namespace = vim.api.nvim_create_namespace("maa_pipeline_log")
@@ -9,6 +9,7 @@ local namespace = vim.api.nvim_create_namespace("maa_pipeline_log")
 local state = {
   entries = {},
   filter = {},
+  help = false,
   line_entries = {},
   line_tokens = {},
   line_kinds = {},
@@ -369,14 +370,6 @@ end
   return filter
 end
 
-function M.filter_help()
-  help.show_filter()
-end
-
-function M.keymap_help()
-  help.show_buffer()
-end
-
 local function ensure_buffer(client_id)
   local buffer = vim.fn.bufnr(buffer_name)
   if buffer < 0 then
@@ -392,12 +385,13 @@ local function ensure_buffer(client_id)
         configure_window(vim.api.nvim_get_current_win())
       end,
     })
-    keymap.setup(buffer, {
-      click_filter = M.click_filter,
+    keymap.setup("log", buffer, {
+      click = M.click_filter,
       filter = M.filter,
-      filter_help = M.filter_help,
-      keymap_help = M.keymap_help,
-      reco_detail = M.open_reco,
+      help = M.toggle_help,
+      reco = M.open_reco,
+      close = "zc",
+      open = "zv",
     })
   end
   vim.b[buffer].maa_pipeline_client_id = client_id
@@ -430,6 +424,7 @@ local function byte_range(parts, start_index, finish_index)
 end
 
 local function append_line(buffer, entry, line, parts, segments, line_kind)
+  line = line:gsub("[\r\n]", " ")
   local count = vim.api.nvim_buf_line_count(buffer)
   local start = count
   local finish = count
@@ -478,8 +473,11 @@ local function append_entry(buffer, entry)
 end
 
 local function show_buffer(buffer)
-  if vim.fn.bufwinid(buffer) >= 0 then
-    return
+  local tab = vim.api.nvim_get_current_tabpage()
+  for _, win in ipairs(vim.fn.win_findbuf(buffer)) do
+    if vim.api.nvim_win_get_tabpage(win) == tab then
+      return
+    end
   end
   vim.cmd("botright 10split")
   vim.api.nvim_win_set_buf(0, buffer)
@@ -490,12 +488,21 @@ function M.use(new_render)
   render = new_render or default_render
 end
 
-function M.set_keys(new_keys)
-  keymap.set(new_keys)
-end
-
-function M.set_fold_keys(fold_keys)
-  keymap.set(fold_keys)
+function M.toggle_help()
+  state.help = not state.help
+  if not state.help then
+    M.set_filter(state.filter)
+    return
+  end
+  local buffer = ensure_buffer(0)
+  state.line_entries = {}
+  state.line_tokens = {}
+  state.line_kinds = {}
+  local lines = help.lines("Maa pipeline log", "log", { help.filter_reference })
+  vim.bo[buffer].modifiable = true
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+  vim.bo[buffer].modifiable = false
+  vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
 end
 
 function M.append(client_id, result)
@@ -509,7 +516,18 @@ function M.append(client_id, result)
       raw = result.message or "",
     }
   end
+  if entry.family == "Task" and entry.phase == "Starting" then
+    state.entries = {}
+  end
   table.insert(state.entries, entry)
+  if state.help then
+    return
+  end
+  if #state.entries == 1 and vim.fn.bufnr(buffer_name) >= 0 then
+    M.set_filter(state.filter)
+    show_buffer(vim.fn.bufnr(buffer_name))
+    return
+  end
   if not matches(entry, state.filter) then
     return
   end
@@ -556,12 +574,12 @@ end
 
 function M.filter(expression)
   if expression == nil then
-    vim.ui.input({ prompt = "Lua log filter (<?> for help): " }, function(input)
+    vim.ui.input({ prompt = "Lua log filter (g? toggles help): " }, function(input)
       if input == nil then
         return
       end
-      if input:match("^%s*%?%s*$") then
-        M.filter_help()
+      if input:match("^%s*g%?%s*$") then
+        M.toggle_help()
         return
       end
       M.filter(input)

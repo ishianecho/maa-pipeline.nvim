@@ -86,8 +86,11 @@ function M.setup(options)
       log.use(options.log.render)
     end
     if options.log.key ~= nil then
-      log.set_key(options.log.key)
+      require("maa-pipeline.keymap").set("log", options.log.key)
     end
+  end
+  if options.trace and options.trace.key ~= nil then
+    require("maa-pipeline.keymap").set("trace", options.trace.key)
   end
   if options.stop_hotkey then
     if jit.os == "Windows" then
