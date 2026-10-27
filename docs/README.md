@@ -24,7 +24,7 @@ Neovim support for MaaFramework pipelines, reusing the parser and index from
 ```lua
 {
   "ishi-o/maa-pipeline.nvim",
-  build = "npm install --include=dev && npm run build",
+  build = "pnpm install && pnpm run build",
   config = function()
     require("maa-pipeline.nvim").setup()
     vim.lsp.enable("maa_pipeline")
@@ -48,8 +48,8 @@ vim.api.nvim_create_autocmd("PackChanged", {
       return
     end
 
-    vim.system({ "npm", "install", "--include=dev" }, { cwd = data.path }):wait()
-    vim.system({ "npm", "run", "build" }, { cwd = data.path }):wait()
+    vim.system({ "pnpm", "install" }, { cwd = data.path }):wait()
+    vim.system({ "pnpm", "run", "build" }, { cwd = data.path }):wait()
   end,
 })
 
@@ -74,12 +74,21 @@ require("maa-pipeline.nvim").setup({
     key = {
       click = "<CR>", -- filter by token under cursor; false or "" disables it
       filter = "f", -- prompt for a Lua filter expression; false or "" disables it
-      help = "?", -- show filter help; false or "" disables it
-      keymap = "g?", -- show keymap help; false or "" disables it
+      help = "g?", -- toggle the in-buffer help view; false or "" disables it
+      reco = "d", -- open recognition detail; false or "" disables it
       close = "zc", -- close the fold under the cursor; false or "" disables it
       open = "zv", -- open the fold under the cursor; false or "" disables it
     },
     render = nil, -- custom render, see Going Further
+  },
+  trace = {
+    key = {
+      jump = "<CR>", -- jump to the node definition; false or "" disables it
+      reco = "d", -- open recognition detail; false or "" disables it
+      refresh = "r", -- refresh the snapshot; false or "" disables it
+      close = "q", -- close the window; false or "" disables it
+      help = "g?", -- toggle the in-buffer help view; false or "" disables it
+    },
   },
 })
 
@@ -95,9 +104,10 @@ vim.lsp.config("maa_pipeline", {
       version = "latest", -- "latest" resolves to the newest version; an exact semver pins it
       timeout = 60000, -- controller and Agent connection timeout in milliseconds; -1 disables it
       debug_mode = true, -- write MaaFramework debug logs
-      save_draw = false, -- save recognition drawings
+      save_draw = false, -- save annotated recognition drawings to `<data_dir>/logs/vision`
       save_on_error = true, -- save recognition data when a task fails
-      daemon = false, -- keep Maa agents alive between tasks
+      reco_image_cache_limit = 64, -- number of recent recognitions whose drawings stay in memory for the detail view
+      daemon = true, -- keep Maa agents alive between tasks
     },
   },
   capabilities = nil, -- nil uses Neovim defaults; provide extended client capabilities when needed
@@ -119,8 +129,10 @@ while Neovim itself remains unelevated
 | `:MaaPipelineSelectController` | Select and configure a Maa controller |
 | `:MaaPipelineStop` | Stop the running Maa task |
 | `:MaaPipelineRun` | Run the Maa task at the cursor |
+| `:MaaPipelinePickRun` | Pick a Maa task declared in the current file and run it |
 | `:MaaPipelineScreenshot` | Select a controller, take a screenshot, crop it, and save or copy its ROI |
 | `:MaaPipelineTrace` | Open the node trace view in a tab, with the runtime log in a bottom window |
+| `:MaaPipelineVisionClean` | Delete the annotated screenshots accumulated under `<data_dir>/logs/vision` |
 | `:MaaPipelineLogFilter [expression]` | Filter runtime logs with a Lua expression; an empty expression clears the filter |
 | `:MaaPipelineLogExportJson` | Export filtered runtime logs as JSON |
 | `:MaaPipelineLogExportText` | Export filtered runtime logs as plain text |
@@ -138,9 +150,10 @@ while Neovim itself remains unelevated
 
 ### Log Filter
 
+The runtime log buffer is cleared automatically whenever a new task starts.
 Press `f` in the runtime log buffer, type a Lua expression, leave it empty to
-clear, press `?` for help. Fields are available directly without the `entry.`
-prefix:
+clear, press `g?` to toggle the in-buffer help view. Fields are available
+directly without the `entry.` prefix:
 
 ```lua
 level == "error"
@@ -160,7 +173,8 @@ Available fields: `level`, `source`, `family`, `phase`, `name`, `raw`, `kind`,
 ### Node Trace
 
 `:MaaPipelineTrace` opens a dedicated tab: the node trace view on top and the
-runtime log buffer in a bottom window. While a task runs, the view refreshes
+runtime log buffer in a bottom window. The tab also opens automatically
+whenever a task starts. While a task runs, the view refreshes
 live from the runtime notifications; press `r` to refresh manually.
 
 Each executed node shows its status and metrics:
@@ -170,31 +184,43 @@ Each executed node shows its status and metrics:
 - `[fail]` the node failed or was interrupted mid-run
 - `[run ]` the node is currently executing
 
-Nodes never reached — including everything after an interruption — are listed
-under `not executed`, so a full pipeline outline is always visible.
+Child nodes reached through a parent's `next` list are indented two spaces per
+level, and `zc`/`zv` fold and unfold a node's subtree (a node's fold starts at
+its own line, so `zc` on a parent hides its descendants). A node referenced
+from several parents' `next` lists gets one row per reference, with runs,
+attempts, anchor, and duration counted separately for each. A `[JumpBack]` tag
+after the status token marks a node entered through a `[JumpBack]` link
+(execution returns to its parent when the subtree ends), and `[Anchor:<alias>]`
+marks a node matched through an anchor alias. Metrics are column-aligned under
+a header: action, executions, recognition attempts, and the total duration.
 
-Keymaps in the trace buffer:
+Keymaps in the trace buffer (press `g?` in the buffer to toggle an in-buffer
+help view listing the currently configured keys):
 
 | Key | Description |
 | --- | --- |
 | `<CR>` | jump to the node definition in its pipeline JSON |
-| `<Tab>` | open the recognition detail for the node's latest recognition |
+| `d` | open the recognition detail for the node's latest recognition |
 | `r` | refresh from the server |
 | `q` | close the window |
+| `g?` | toggle the help view |
 
 ### Recognition Detail
 
-Press `<Tab>` on a trace node or `d` on a log line with a recognition to open a
-new tab with:
+Press `d` on a trace node or a log line with a recognition to open a new tab
+with:
 
-- the raw screenshot of that recognition plus every framework-annotated draw
-  (boxes, OCR results) as PNG files under `stdpath("data")/maa-pipeline.nvim/reco/`
+- the framework-annotated image of that recognition (ROI and result boxes, OCR
+  results), served from the in-memory cache kept for the last
+  `runtime.reco_image_cache_limit` recognitions and displayed through
+  `vim.ui.img` (Kitty graphics protocol); the raw screenshot is shown when no
+  annotated image was retained
 - a text buffer with hit/miss, algorithm, box, best candidate (`score`, `text`,
   `count`, `label`), `all`/`filtered` counts, and nested recognitions
 
-Screenshots render through `vim.ui.img` (Kitty); without image support the file
-paths are listed in the detail buffer. Details stay available while the Maa
-instance lives: during a task, or after it when `runtime.daemon = true`.
+Without terminal image support only the text buffer opens. Details stay
+available while the Maa instance lives: during a task, or after it when
+`runtime.daemon = true`.
 
 ### Custom Render
 

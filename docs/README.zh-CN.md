@@ -21,7 +21,7 @@
 ```lua
 {
   "ishi-o/maa-pipeline.nvim",
-  build = "npm install --include=dev && npm run build",
+  build = "pnpm install && pnpm run build",
   config = function()
     require("maa-pipeline.nvim").setup()
     vim.lsp.enable("maa_pipeline")
@@ -45,8 +45,8 @@ vim.api.nvim_create_autocmd("PackChanged", {
       return
     end
 
-    vim.system({ "npm", "install", "--include=dev" }, { cwd = data.path }):wait()
-    vim.system({ "npm", "run", "build" }, { cwd = data.path }):wait()
+    vim.system({ "pnpm", "install" }, { cwd = data.path }):wait()
+    vim.system({ "pnpm", "run", "build" }, { cwd = data.path }):wait()
   end,
 })
 
@@ -71,12 +71,21 @@ require("maa-pipeline.nvim").setup({
     key = {
       click = "<CR>", -- 按光标处来源、任务 ID 或名称过滤；false 或 "" 表示不注册
       filter = "f", -- 输入 Lua 过滤表达式；false 或 "" 表示不注册
-      help = "?", -- 查看过滤帮助；false 或 "" 表示不注册
-      keymap = "g?", -- 查看当前缓冲区快捷键；false 或 "" 表示不注册
+      help = "g?", -- 切换缓冲区内帮助视图；false 或 "" 表示不注册
+      reco = "d", -- 打开识别详情；false 或 "" 表示不注册
       close = "zc", -- 折叠光标处条目；false 或 "" 表示不注册
       open = "zv", -- 展开光标处条目；false 或 "" 表示不注册
     },
     render = nil, -- 自定义渲染，见“深入”
+  },
+  trace = {
+    key = {
+      jump = "<CR>", -- 跳转到节点定义；false 或 "" 表示不注册
+      reco = "d", -- 打开识别详情；false 或 "" 表示不注册
+      refresh = "r", -- 刷新快照；false 或 "" 表示不注册
+      close = "q", -- 关闭窗口；false 或 "" 表示不注册
+      help = "g?", -- 切换缓冲区内帮助视图；false 或 "" 表示不注册
+    },
   },
 })
 
@@ -92,9 +101,10 @@ vim.lsp.config("maa_pipeline", {
       version = "latest", -- "latest" 解析为最新版本；填写精确 semver 可固定版本
       timeout = 60000, -- 控制器和 Agent 连接超时，单位毫秒；-1 表示不限制
       debug_mode = true, -- 写入 MaaFramework 调试日志
-      save_draw = false, -- 保存识别过程图片
+      save_draw = false, -- 保存识别标注图到 `<data_dir>/logs/vision`
       save_on_error = true, -- 任务失败时保存识别数据
-      daemon = false, -- 任务之间保持 Maa agent 常驻
+      reco_image_cache_limit = 64, -- 在内存中保留最近 N 次识别的标注图，供详情视图使用
+      daemon = true, -- 任务之间保持 Maa agent 常驻
     },
   },
   capabilities = nil, -- nil 使用 Neovim 默认能力；需要时可传入扩展后的客户端能力
@@ -115,8 +125,10 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 | `:MaaPipelineSelectController` | 选择并配置 Maa 控制器 |
 | `:MaaPipelineStop` | 停止正在运行的 Maa 任务 |
 | `:MaaPipelineRun` | 运行光标所在的 Maa 任务 |
+| `:MaaPipelinePickRun` | 从当前文件已声明的任务中选择并运行 |
 | `:MaaPipelineScreenshot` | 选择控制器、截图、裁剪，并保存图片或复制 ROI |
 | `:MaaPipelineTrace` | 在标签页中打开节点追踪视图，底部同时显示运行日志窗口 |
+| `:MaaPipelineVisionClean` | 删除 `<data_dir>/logs/vision` 下累积的识别标注截图 |
 | `:MaaPipelineLogFilter [expression]` | 使用 Lua 表达式过滤运行日志；空表达式清除过滤 |
 | `:MaaPipelineLogExportJson` | 将过滤后的运行日志导出为 JSON |
 | `:MaaPipelineLogExportText` | 将过滤后的运行日志导出为纯文本 |
@@ -134,7 +146,8 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 
 ### 日志过滤
 
-在运行日志缓冲区按 `f`，输入 Lua 表达式，留空清除，输入 `?` 查看帮助。表达式里字段可直接使用，不需要 `entry.` 前缀：
+每次新任务开始时，运行日志缓冲区会自动清空。
+在运行日志缓冲区按 `f`，输入 Lua 表达式，留空清除，按 `g?` 切换缓冲区内帮助视图。表达式里字段可直接使用，不需要 `entry.` 前缀：
 
 ```lua
 level == "error"
@@ -150,7 +163,7 @@ raw and raw:find("recognition", 1, true)
 
 ### 节点追踪
 
-`:MaaPipelineTrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。
+`:MaaPipelineTrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务开始时该标签页也会自动打开。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。
 
 每个执行过的节点显示状态与统计：
 
@@ -159,25 +172,26 @@ raw and raw:find("recognition", 1, true)
 - `[fail]` 节点失败或中途中断
 - `[run ]` 节点正在执行
 
-从未到达的节点（包括中断后未走到的所有节点）统一列在 `not executed` 段，始终给出完整的流程概览。
+通过父节点 `next` 列表到达的子节点按层级每级缩进两格，`zc`/`zv` 可折叠与展开节点的子树（节点的折叠从自身所在行开始，因此在父节点上按 `zc` 即可隐藏其所有后代）。被多个父节点 `next` 引用的节点每个引用各占一行，runs、try、anchor 与耗时按引用分别统计。状态标记后的 `[JumpBack]` 表示该节点经 `[JumpBack]` 链接进入（子树结束后回到父节点），`[Anchor:<别名>]` 表示通过 anchor 别名匹配。指标列按表头统一对齐：action、执行次数、识别尝试次数以及总耗时。
 
-追踪缓冲区按键：
+追踪缓冲区按键（在缓冲区内按 `g?` 可切换显示当前快捷键的帮助视图）：
 
 | 按键 | 说明 |
 | --- | --- |
 | `<CR>` | 跳转到该节点在 pipeline JSON 中的定义 |
-| `<Tab>` | 打开该节点最近一次识别的详情 |
+| `d` | 打开该节点最近一次识别的详情 |
 | `r` | 从服务器刷新 |
 | `q` | 关闭窗口 |
+| `g?` | 切换帮助视图 |
 
 ### 识别详情
 
-在追踪节点上按 `<Tab>`，或在日志中带识别的行上按 `d`，打开一个新标签页，包含：
+在追踪节点或日志中带识别的行上按 `d`，打开一个新标签页，包含：
 
-- 该次识别的原始截图与所有框架标注图（框选、OCR 结果），PNG 保存在 `stdpath("data")/maa-pipeline.nvim/reco/`
+- 该次识别的框架标注图（ROI 与结果框、OCR 结果），来自内存中最近 `runtime.reco_image_cache_limit` 次识别的缓存，通过 `vim.ui.img`（Kitty 图形协议）直接显示；无标注图时回退为原始截图
 - 文本详情缓冲区：命中与否、算法、box、最优候选（`score`、`text`、`count`、`label`）、`all`/`filtered` 计数与嵌套识别
 
-截图通过 `vim.ui.img`（Kitty）渲染；无图片支持时详情缓冲区中列出文件路径。识别详情在 Maa 实例存活期间可用：任务运行中，或 `runtime.daemon = true` 时任务结束后。
+终端不支持图片显示时只打开文本详情缓冲区。识别详情在 Maa 实例存活期间可用：任务运行中，或 `runtime.daemon = true` 时任务结束后。
 
 ### 自定义渲染
 
