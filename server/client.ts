@@ -122,11 +122,6 @@ export class RuntimeClient {
   controllerType: string | null = null;
   daemonHandle: string | null = null;
   readonly trace = new TraceCollector({
-    getKnownTasks: async () => {
-      const inst = this.active?.handle ?? this.daemonHandle ?? this.trace.currentInst();
-      if (!inst) return null;
-      return this.request<string[]>("getKnownTasks", inst).catch(() => null);
-    },
     onChange: (snapshot) => {
       this.connection.sendNotification("maa-pipeline/trace", snapshot);
     },

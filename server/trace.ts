@@ -1,13 +1,17 @@
-export type TraceStatus = "running" | "succeeded" | "failed" | "missed" | "not-executed";
+export type TraceStatus = "running" | "succeeded" | "failed" | "missed";
 
 export interface TraceEntry {
+  parent: string | null;
   name: string;
   status: TraceStatus;
+  depth: number;
   executions: number;
-  hits: number;
   attempts: number;
   lastRecoId: number | null;
   durationMs: number | null;
+  jumpBack: boolean;
+  anchor: string | null;
+  action: string | null;
 }
 
 export interface TraceSnapshot {
@@ -15,7 +19,6 @@ export interface TraceSnapshot {
   taskId: number | null;
   running: boolean;
   entries: TraceEntry[];
-  notExecuted: string[];
 }
 
 export interface RecoDetailEntry {
@@ -41,24 +44,25 @@ export interface RecoDetailInfo {
 
 export interface RecoDetailResult {
   info: RecoDetailInfo;
-  raw: string;
-  draws: string[];
+  images: string[];
 }
 
 export interface TraceDeps {
-  getKnownTasks: () => Promise<string[] | null>;
   onChange: (snapshot: TraceSnapshot) => void;
 }
 
-interface TraceNameState {
+interface TraceEdgeState {
+  parent: string | null;
+  name: string;
   executions: number;
-  hits: number;
   attempts: number;
-  lastStatus: "running" | "succeeded" | "failed" | null;
+  lastStatus: "succeeded" | "failed" | null;
   runningSince: number | null;
-  firstTs: number | null;
-  lastTs: number | null;
+  firstTs: number;
+  lastTs: number;
   lastRecoId: number | null;
+  jumpBack: boolean;
+  anchor: string | null;
 }
 
 const CATEGORIES = new Set([
@@ -84,15 +88,21 @@ function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function edgeKey(parent: string | null, name: string): string {
+  return (parent ?? "") + "\0" + name;
+}
+
 export class TraceCollector {
   private deps: TraceDeps;
   private inst: string | null = null;
   private task: string | null = null;
   private taskId: number | null = null;
   private running = false;
-  private names = new Map<string, TraceNameState>();
+  private edges = new Map<string, TraceEdgeState>();
   private order: string[] = [];
-  private knownTasks: string[] = [];
+  private actions = new Map<string, string>();
+  private currentParent: string | null = null;
+  private lastHit = new Map<string, string>();
 
   constructor(deps: TraceDeps) {
     this.deps = deps;
@@ -120,10 +130,13 @@ export class TraceCollector {
       const taskId = number(msg.task_id);
       if (taskId !== undefined) this.taskId = taskId;
       if (phase === "Starting") {
-        this.names = new Map();
+        this.edges = new Map();
         this.order = [];
+        this.actions = new Map();
+        this.currentParent = null;
+        this.lastHit = new Map();
         this.running = true;
-        void this.loadKnownTasks();
+        if (this.task) this.stateFor(null, this.task, now);
       } else {
         this.running = false;
       }
@@ -132,19 +145,40 @@ export class TraceCollector {
     }
 
     if (category === "PipelineNode") {
-      const name = text(msg.name);
-      if (name) {
-        const state = this.stateFor(name, now);
-        state.lastTs = now;
-        if (phase === "Starting") {
-          state.executions += 1;
-          state.runningSince = now;
-          state.lastStatus = "running";
-        } else {
-          state.runningSince = null;
-          state.lastStatus = phase === "Succeeded" ? "succeeded" : "failed";
+      if (phase === "Starting") {
+        const name = text(msg.name);
+        if (name) {
+          const key = this.lastHit.get(name);
+          const state = key ? this.edges.get(key) : undefined;
+          if (state && state.executions > 0) {
+            state.lastTs = now;
+            state.runningSince = now;
+            this.changed();
+          }
         }
+        return true;
+      }
+      const details = isRecord(msg.node_details) ? msg.node_details : null;
+      const hitName = details ? text(details.name) : text(msg.name);
+      const poller = details ? text(msg.name) : this.currentParent;
+      const parent = poller !== undefined && poller !== hitName ? poller : null;
+      if (hitName) {
+        const state = this.stateFor(parent, hitName, now);
+        state.lastTs = now;
+        state.executions += 1;
+        state.lastStatus = phase === "Succeeded" ? "succeeded" : "failed";
+        state.runningSince = null;
+        this.lastHit.set(hitName, edgeKey(parent, hitName));
         this.changed();
+      }
+      if (poller !== undefined && poller !== hitName) {
+        const pkey = this.lastHit.get(poller);
+        const pstate = pkey ? this.edges.get(pkey) : undefined;
+        if (pstate) {
+          pstate.lastTs = now;
+          pstate.runningSince = null;
+          this.changed();
+        }
       }
       return true;
     }
@@ -152,9 +186,7 @@ export class TraceCollector {
     if (category === "RecognitionNode") {
       const name = text(msg.name);
       if (name && phase === "Succeeded") {
-        const state = this.stateFor(name, now);
-        state.hits += 1;
-        state.lastTs = now;
+        this.stateFor(this.currentParent, name, now);
         this.changed();
       }
       return true;
@@ -162,9 +194,14 @@ export class TraceCollector {
 
     if (category === "NextList") {
       if (Array.isArray(msg.list)) {
+        const parent = text(msg.name) ?? null;
+        this.currentParent = parent;
         for (const item of msg.list) {
-          const name = isRecord(item) ? text(item.name) : undefined;
-          if (name) this.stateFor(name, now);
+          if (!isRecord(item)) continue;
+          const name = text(item.name);
+          if (!name) continue;
+          const state = this.stateFor(parent, name, now);
+          if (item.jump_back === true) state.jumpBack = true;
         }
         this.changed();
       }
@@ -175,10 +212,24 @@ export class TraceCollector {
       const name = text(msg.name);
       const recoId = number(msg.reco_id);
       if (name && recoId !== undefined) {
-        const state = this.stateFor(name, now);
+        const state = this.stateFor(this.currentParent, name, now);
         if (phase === "Starting") state.attempts += 1;
         state.lastTs = now;
         state.lastRecoId = recoId;
+        const anchor = text(msg.anchor);
+        if (anchor) state.anchor = anchor;
+        this.changed();
+      }
+      return true;
+    }
+
+    if (category === "Action") {
+      const name = text(msg.name);
+      if (name) {
+        if (phase !== "Starting" && isRecord(msg.action_details)) {
+          const action = text(msg.action_details.action);
+          if (action) this.actions.set(name, action);
+        }
         this.changed();
       }
       return true;
@@ -188,68 +239,83 @@ export class TraceCollector {
   }
 
   snapshot(): TraceSnapshot {
+    const depths = this.nodeDepths();
     const entries: TraceEntry[] = [];
-    const active = new Set<string>();
-    for (const name of this.order) {
-      const state = this.names.get(name);
+    for (const key of this.order) {
+      const state = this.edges.get(key);
       if (!state) continue;
       const status = this.statusOf(state);
-      if (status === "not-executed") continue;
-      active.add(name);
+      if (!status) continue;
       entries.push({
-        name,
+        parent: state.parent,
+        name: state.name,
         status,
+        depth: state.parent === null ? 0 : (depths.get(state.parent) ?? -1) + 1,
         executions: state.executions,
-        hits: state.hits,
         attempts: state.attempts,
         lastRecoId: state.lastRecoId,
-        durationMs:
-          state.firstTs !== null && state.lastTs !== null
-            ? Math.max(0, state.lastTs - state.firstTs)
-            : null,
+        durationMs: Math.max(0, state.lastTs - state.firstTs),
+        jumpBack: state.jumpBack,
+        anchor: state.anchor,
+        action: this.actions.get(state.name) ?? null,
       });
     }
-    const universe = new Set<string>(this.knownTasks);
-    for (const name of this.order) universe.add(name);
-    if (this.task) universe.delete(this.task);
-    const notExecuted = [...universe].filter((name) => !active.has(name));
-    return { task: this.task, taskId: this.taskId, running: this.running, entries, notExecuted };
+    return { task: this.task, taskId: this.taskId, running: this.running, entries };
   }
 
-  private statusOf(state: TraceNameState): TraceStatus {
+  private statusOf(state: TraceEdgeState): TraceStatus | null {
     if (state.executions > 0) {
       if (state.runningSince !== null) return this.running ? "running" : "failed";
       return state.lastStatus ?? "failed";
     }
     if (state.attempts > 0) return "missed";
-    return "not-executed";
+    return null;
   }
 
-  private stateFor(name: string, now: number): TraceNameState {
-    let state = this.names.get(name);
+  private nodeDepths(): Map<string, number> {
+    const depths = new Map<string, number>();
+    for (const edge of this.edges.values()) {
+      if (edge.parent === null) depths.set(edge.name, 0);
+    }
+    let changed = true;
+    let rounds = this.edges.size + 1;
+    while (changed && rounds-- > 0) {
+      changed = false;
+      for (const edge of this.edges.values()) {
+        if (edge.parent === null) continue;
+        const parentDepth = depths.get(edge.parent);
+        if (parentDepth === undefined) continue;
+        const depth = parentDepth + 1;
+        if (depth < (depths.get(edge.name) ?? Infinity)) {
+          depths.set(edge.name, depth);
+          changed = true;
+        }
+      }
+    }
+    return depths;
+  }
+
+  private stateFor(parent: string | null, name: string, now: number): TraceEdgeState {
+    const key = edgeKey(parent, name);
+    let state = this.edges.get(key);
     if (!state) {
       state = {
+        parent,
+        name,
         executions: 0,
-        hits: 0,
         attempts: 0,
         lastStatus: null,
         runningSince: null,
         firstTs: now,
         lastTs: now,
         lastRecoId: null,
+        jumpBack: false,
+        anchor: null,
       };
-      this.names.set(name, state);
-      this.order.push(name);
+      this.edges.set(key, state);
+      this.order.push(key);
     }
     return state;
-  }
-
-  private async loadKnownTasks() {
-    const tasks = await this.deps.getKnownTasks().catch(() => null);
-    if (Array.isArray(tasks) && tasks.length) {
-      this.knownTasks = tasks;
-      this.changed();
-    }
   }
 
   private changed() {
