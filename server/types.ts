@@ -26,7 +26,6 @@ export type LogLevel = LogCategory;
 
 export interface RuntimeOptions {
   data_dir?: string;
-  version?: string;
   timeout?: number;
   debug_mode?: boolean;
   save_draw?: boolean;

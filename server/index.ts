@@ -323,6 +323,7 @@ const projectCommandHandlers = {
   },
   [commands.discoverController]: ({ project, args }) =>
     runtime.discoverController(project, args[1]),
+  [commands.screencap]: async ({ project }) => runtime.annotatedScreenshot(project),
   [commands.screenShot]: async ({ project }) => {
     let screenshot;
     try {

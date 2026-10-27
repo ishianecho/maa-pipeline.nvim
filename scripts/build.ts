@@ -6,7 +6,7 @@ const shared = {
   platform: "node" as const,
   format: "esm" as const,
   mainFields: ["module", "main"],
-  external: ["pacote", "tar"],
+  external: [],
   banner: {
     js: `
 import { createRequire } from 'module';

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as esbuild from "esbuild";
@@ -22,7 +23,7 @@ async function loadRuntimeClient(t: any) {
     platform: "node",
     format: "esm",
     mainFields: ["module", "main"],
-    external: ["pacote", "tar"],
+    external: [],
     banner: {
       js: `
 import { createRequire } from 'module';
@@ -66,6 +67,12 @@ function testProject() {
       },
     },
   };
+}
+
+function testProjectAt(root: string) {
+  const project = testProject() as { root: string };
+  project.root = root;
+  return project;
 }
 
 test("does not retry setup after an external agent fails", async (t) => {
@@ -178,6 +185,95 @@ test("feeds trace notifications to the collector and emits trace snapshots", asy
   assert.ok(traces.length >= 1);
   assert.equal(traces.at(-1).params.entries[0].name, "NodeA");
   assert.equal(traces.at(-1).params.entries[0].status, "succeeded");
+});
+
+test("resolves the framework from a node_modules dependency", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const pkgDir = path.join(root, "node_modules", "@maaxyz", "maa-node");
+  await mkdir(pkgDir, { recursive: true });
+  await writeFile(
+    path.join(pkgDir, "package.json"),
+    JSON.stringify({ name: "@maaxyz/maa-node", version: "5.14.0" }),
+  );
+
+  const client = new RuntimeClient({ sendNotification: () => {} } as any);
+  const local = await (client as any).resolveProjectModule(root);
+
+  assert.deepEqual(local, {
+    module: path.join(root, "node_modules"),
+    binding: null,
+    version: "5.14.0",
+  });
+});
+
+test("finds a MaaNode.node deployment anywhere in the project and reads its version", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const deploy = path.join(root, "custom", "nested", "maafw");
+  await mkdir(deploy, { recursive: true });
+  await writeFile(path.join(deploy, "MaaNode.node"), "");
+  await writeFile(
+    path.join(deploy, "version.json"),
+    JSON.stringify({ versions: { maafw: "v5.15.0-beta.1" } }),
+  );
+
+  const client = new RuntimeClient({ sendNotification: () => {} } as any);
+  const local = await (client as any).resolveProjectModule(root);
+
+  assert.deepEqual(local, { module: null, binding: deploy, version: "5.15.0-beta.1" });
+});
+
+test("reads the version marker placed next to the deployment directory", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const deploy = path.join(root, "install", "maafw");
+  await mkdir(deploy, { recursive: true });
+  await writeFile(path.join(deploy, "MaaNode.node"), "");
+  await writeFile(
+    path.join(root, "install", "version.json"),
+    JSON.stringify({ versions: { maafw: "v5.15.0" } }),
+  );
+
+  const client = new RuntimeClient({ sendNotification: () => {} } as any);
+  const local = await (client as any).resolveProjectModule(root);
+
+  assert.deepEqual(local, { module: null, binding: deploy, version: "5.15.0" });
+});
+
+test("anchors the search at the git repository root above the project root", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const repo = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
+  t.after(async () => rm(repo, { recursive: true, force: true }));
+  const deploy = path.join(repo, "install", "maafw");
+  await mkdir(deploy, { recursive: true });
+  await writeFile(path.join(deploy, "MaaNode.node"), "");
+  await mkdir(path.join(repo, ".git"), { recursive: true });
+  const projectRoot = path.join(repo, "install");
+  await mkdir(path.join(projectRoot, "assets"), { recursive: true });
+
+  const client = new RuntimeClient({ sendNotification: () => {} } as any);
+  const local = await (client as any).resolveProjectModule(
+    await (client as any).frameworkRoot(projectRoot),
+  );
+
+  assert.deepEqual(local, { module: null, binding: deploy, version: null });
+});
+
+test("prepare throws when the project ships no MaaFramework", async (t) => {
+  const RuntimeClient = await loadRuntimeClient(t);
+  const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, "assets"), { recursive: true });
+
+  const client = new RuntimeClient({ sendNotification: () => {} } as any, {
+    data_dir: path.join(root, "data"),
+  });
+
+  await assert.rejects(client.prepare(testProjectAt(root)), /No MaaFramework found in/);
 });
 
 test("requests recognition details against the traced instance", async (t) => {

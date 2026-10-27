@@ -9,6 +9,7 @@ export const commands = {
   screenShot: "maa-pipeline.takeScreenshot",
   saveScreenshot: "maa-pipeline.saveScreenshot",
   cancelScreenshot: "maa-pipeline.cancelScreenshot",
+  screencap: "maa-pipeline.screencap",
   selectController: "maa-pipeline.selectController",
   listControllers: "maa-pipeline.listControllers",
   discoverController: "maa-pipeline.discoverController",

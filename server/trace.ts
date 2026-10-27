@@ -103,6 +103,7 @@ export class TraceCollector {
   private actions = new Map<string, string>();
   private currentParent: string | null = null;
   private lastHit = new Map<string, string>();
+  private lastRecoId: number | null = null;
 
   constructor(deps: TraceDeps) {
     this.deps = deps;
@@ -110,6 +111,10 @@ export class TraceCollector {
 
   currentInst(): string | null {
     return this.inst;
+  }
+
+  latestRecoId(): number | null {
+    return this.lastRecoId;
   }
 
   ingest(inst: string, msg: unknown): boolean {
@@ -135,6 +140,7 @@ export class TraceCollector {
         this.actions = new Map();
         this.currentParent = null;
         this.lastHit = new Map();
+        this.lastRecoId = null;
         this.running = true;
         if (this.task) this.stateFor(null, this.task, now);
       } else {
@@ -216,6 +222,7 @@ export class TraceCollector {
         if (phase === "Starting") state.attempts += 1;
         state.lastTs = now;
         state.lastRecoId = recoId;
+        this.lastRecoId = recoId;
         const anchor = text(msg.anchor);
         if (anchor) state.anchor = anchor;
         this.changed();

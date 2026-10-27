@@ -1,13 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { pipeline } from "node:stream/promises";
 
-import pacote from "pacote";
-import { x as extractTar } from "tar";
-import { MaaVersionManager } from "@nekosu/maa-version-manager";
 import { buildControllerRuntime, buildResourceRuntime } from "@nekosu/maa-pipeline-manager";
 import {
   hostToSubReq,
@@ -19,7 +15,7 @@ import {
 import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc";
 
 import { resolveAgent, runtimeAgents } from "./agent.ts";
-import { encodeBase64Json, formatByteSize, jpegDimensions, pngDimensions } from "./utils.ts";
+import { encodeBase64Json, jpegDimensions, pngDimensions } from "./utils.ts";
 import { formatRuntimeLogLine, parseLogLine } from "./log.ts";
 import { TraceCollector, type RecoDetailInfo, type RecoDetailResult } from "./trace.ts";
 import type {
@@ -44,44 +40,6 @@ export class RuntimeSetupError extends Error {
   }
 }
 
-class NpmConfigVersionManager extends MaaVersionManager {
-  downloadProgress?: (bytes: number) => void;
-  downloadLabel?: string;
-
-  async extract(packageSpec: string, destination: string, registry?: string) {
-    await mkdir(destination, { recursive: true });
-    await pacote.tarball.stream(
-      packageSpec,
-      async (stream) => {
-        let downloaded = 0;
-        let reported = 0;
-        stream.on("data", (chunk) => {
-          downloaded += chunk.length;
-          if (downloaded - reported >= 1024 * 1024) {
-            reported = downloaded;
-            this.downloadProgress?.(downloaded);
-          }
-        });
-        await pipeline(
-          stream,
-          extractTar({
-            cwd: destination,
-            strip: 1,
-            noMtime: true,
-            preserveOwner: false,
-            filter: (_, entry: any) => !/Link$/.test(entry.type),
-          }),
-        );
-      },
-      { registry },
-    );
-  }
-
-  async fetchLatest() {
-    return pacote.manifest("@maaxyz/maa-node@latest");
-  }
-}
-
 function runtimeConfig(project: RuntimeProject, constants: any) {
   const data = project.bundle.content.object;
   const controller = buildControllerRuntime(data, project.config, constants);
@@ -101,8 +59,7 @@ export class RuntimeClient {
   connection: RuntimeConnection;
   options: {
     dataDir?: string;
-    requestedVersion: string;
-    resolvedVersion: string | null;
+    maaVersion: string | null;
     timeout: number;
     debugMode: boolean;
     saveDraw: boolean;
@@ -111,7 +68,8 @@ export class RuntimeClient {
     locale: string;
     daemon: boolean;
   };
-  manager: MaaVersionManager | null = null;
+  modulePath: string | null = null;
+  bindingPath: string | null = null;
   rpc: MessageConnection | null = null;
   server: net.Server | null = null;
   process: ChildProcess | null = null;
@@ -132,8 +90,7 @@ export class RuntimeClient {
     this.connection = connection;
     this.options = {
       dataDir: options.data_dir,
-      requestedVersion: options.version ?? "latest",
-      resolvedVersion: null,
+      maaVersion: null,
       timeout: options.timeout ?? 60_000,
       debugMode: options.debug_mode ?? true,
       saveDraw: options.save_draw ?? false,
@@ -164,45 +121,97 @@ export class RuntimeClient {
     }
   }
 
-  async prepare() {
-    if (!this.options.dataDir) throw new Error("init_options.runtime.data_dir is required");
-    if (!this.manager) {
-      this.manager = new NpmConfigVersionManager(path.join(this.options.dataDir, "native"));
-      await this.manager.init();
+  private async findBinding(root: string): Promise<string | null> {
+    let queue: string[] = [root];
+    for (let depth = 0; depth < 6 && queue.length > 0; depth += 1) {
+      const next: string[] = [];
+      for (const dir of queue) {
+        let entries;
+        try {
+          entries = await readdir(dir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name === "MaaNode.node") return dir;
+          if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") {
+            next.push(path.join(dir, entry.name));
+          }
+        }
+      }
+      queue = next;
     }
-    let version = this.options.resolvedVersion;
-    if (!version) {
-      version = this.options.requestedVersion;
-      if (version === "latest") {
-        const latest = await this.manager.fetchLatest();
-        if (!latest?.version) throw new Error("Failed to resolve the latest MaaFramework version");
-        version = latest.version;
+    return null;
+  }
+
+  private async frameworkRoot(root: string): Promise<string> {
+    let current = path.resolve(root);
+    for (let depth = 0; depth < 16; depth += 1) {
+      try {
+        await access(path.join(current, ".git"));
+        return current;
+      } catch {
+        // keep walking up to the repository root
+      }
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+    return path.resolve(root);
+  }
+
+  private async resolveProjectModule(root: string) {
+    const moduleFolder = path.join(root, "node_modules");
+    try {
+      const pkg = JSON.parse(
+        await readFile(path.join(moduleFolder, "@maaxyz", "maa-node", "package.json"), "utf8"),
+      );
+      if (typeof pkg.version === "string") {
+        return { module: moduleFolder, binding: null as string | null, version: pkg.version };
+      }
+    } catch {
+      // project does not declare @maaxyz/maa-node
+    }
+    const binding = await this.findBinding(root);
+    if (!binding) return null;
+    let version: string | null = null;
+    for (const marker of [
+      path.join(binding, "version.json"),
+      path.join(path.dirname(binding), "version.json"),
+    ]) {
+      try {
+        const versionJson = JSON.parse(await readFile(marker, "utf8"));
+        const raw = versionJson?.versions?.maafw;
+        if (typeof raw === "string") {
+          version = raw.replace(/^v/, "");
+          break;
+        }
+      } catch {
+        // version marker is optional
       }
     }
-    this.options.resolvedVersion = version;
+    return { module: null as string | null, binding, version };
+  }
 
-    const manager = this.manager as any;
-    const labels = {
-      "prepare-folder": "Preparing MaaFramework",
-      "download-scripts": `Downloading MaaFramework ${version}`,
-      "download-binary": "Downloading MaaFramework native library",
-      "move-folders": "Installing MaaFramework",
-      finish: "MaaFramework is ready",
-    };
-    const progress = (step: string) => {
-      const label = labels[step] ?? step;
-      if (step === "download-scripts" || step === "download-binary") manager.downloadLabel = label;
-      this.log({ level: "info", message: label, source: "maa-runtime" });
-    };
-    manager.downloadProgress = (bytes: number) =>
-      this.log({
-        level: "info",
-        message: `${manager.downloadLabel} (${formatByteSize(bytes)})`,
-        source: "maa-runtime",
-      });
-
-    const prepared = await manager.prepare(version, progress);
-    if (!prepared) throw new Error(`Failed to prepare MaaFramework ${version}`);
+  async prepare(project: RuntimeProject) {
+    if (!this.options.dataDir) throw new Error("init_options.runtime.data_dir is required");
+    const root = await this.frameworkRoot(project.root);
+    const local = await this.resolveProjectModule(root);
+    if (!local) {
+      throw new Error(
+        `No MaaFramework found in ${root}; expected node_modules/@maaxyz/maa-node or a MaaNode.node deployment`,
+      );
+    }
+    this.modulePath = local.module;
+    this.bindingPath = local.binding;
+    this.options.maaVersion = local.version;
+    this.log({
+      level: "info",
+      message: local.binding
+        ? `Using MaaFramework ${local.version ?? "unknown"} from ${local.binding}`
+        : `Using @maaxyz/maa-node ${local.version} from ${root}`,
+      source: "maa-runtime",
+    });
   }
 
   private async isAdmin() {
@@ -212,9 +221,9 @@ export class RuntimeClient {
     });
   }
 
-  async ensure() {
+  async ensure(project: RuntimeProject) {
     if (this.rpc) return this.rpc;
-    await this.prepare();
+    await this.prepare(project);
     await mkdir(path.join(this.options.dataDir!, "logs"), { recursive: true });
 
     const server = net.createServer();
@@ -252,7 +261,7 @@ export class RuntimeClient {
       encodeBase64Json({
         id,
         port: address.port,
-        module: this.manager!.moduleFolder(this.options.resolvedVersion!),
+        ...(this.bindingPath ? { binding: this.bindingPath } : { module: this.modulePath! }),
         maaLog: path.join(this.options.dataDir!, "logs"),
         debugMode: this.options.debugMode,
         saveDraw: this.options.saveDraw,
@@ -435,7 +444,7 @@ export class RuntimeClient {
     );
     if (!controller) throw new Error(`Unknown controller ${name}`);
     if (controller.type === "Adb") {
-      await this.ensure();
+      await this.ensure(project);
       const devices = await this.request<any[]>("refreshAdb", project.config.adb?.adb_path);
       return {
         items: devices.map((device) => ({
@@ -453,7 +462,7 @@ export class RuntimeClient {
       };
     }
     if (controller.type === "Win32" || controller.type === "Gamepad") {
-      await this.ensure();
+      await this.ensure(project);
       const desktop = controller.type === "Win32" ? controller.win32 : controller.gamepad;
       const classRegex = desktop?.class_regex ? new RegExp(desktop.class_regex) : null;
       const windowRegex = desktop?.window_regex ? new RegExp(desktop.window_regex) : null;
@@ -483,7 +492,7 @@ export class RuntimeClient {
       };
     }
     if (controller.type === "Linux") {
-      await this.ensure();
+      await this.ensure(project);
       const meta = controller.linux ?? {};
       const screencap = meta.screencap ?? "Wlr";
       const input = meta.input ?? "Wlr";
@@ -546,14 +555,16 @@ export class RuntimeClient {
       PI_CLIENT_NAME: "Neovim",
       PI_CLIENT_VERSION: "0.1.0",
       PI_CLIENT_LANGUAGE: this.options.locale,
-      PI_CLIENT_MAAFW_VERSION: this.options.resolvedVersion ?? "",
+      PI_CLIENT_MAAFW_VERSION: this.options.maaVersion ?? "",
       PI_VERSION: "",
     };
 
     if (process.platform === "win32" && this.controllerType === "Win32") {
-      const pluginRuntimeDirectory = (this.manager as any)?.binaryFolder(
-        (this.manager as any)?.versionFolder(this.options.resolvedVersion),
-      );
+      const pluginRuntimeDirectory = this.bindingPath
+        ? this.bindingPath
+        : this.modulePath
+          ? path.join(this.modulePath, "@maaxyz", `maa-node-${process.platform}-${process.arch}`)
+          : undefined;
       const existingKey = Object.keys(childEnv).find((k) => k.toLowerCase() === "path");
       const inheritedPath = existingKey ? childEnv[existingKey] : undefined;
       if (existingKey && existingKey !== "Path") {
@@ -684,7 +695,7 @@ export class RuntimeClient {
     this.running = task;
     this.log({ level: "info", message: `Starting task ${task}`, source: "maa-runtime" });
     try {
-      await this.ensure();
+      await this.ensure(project);
       const setup = await this.setup(project);
       if (!setup?.handle)
         throw new RuntimeSetupError(setup?.error ?? "Failed to create Maa instance");
@@ -720,7 +731,7 @@ export class RuntimeClient {
     this.log({ level: "info", message: "Taking screenshot", source: "maa-runtime" });
     let handle;
     try {
-      await this.ensure();
+      await this.ensure(project);
       const setup = await this.setup(project);
       handle = setup?.handle;
       if (!handle) throw new RuntimeSetupError(setup?.error ?? "Failed to create Maa instance");
@@ -734,6 +745,25 @@ export class RuntimeClient {
       }
       this.running = null;
     }
+  }
+
+  async annotatedScreenshot(project: RuntimeProject) {
+    const inst = this.active?.handle ?? this.daemonHandle ?? this.trace.currentInst();
+    const recoId = this.trace.latestRecoId();
+    if (inst && recoId !== null) {
+      const result = await this.request<{ draws: string[] } | null>(
+        "getRecoDetail",
+        inst,
+        String(recoId),
+      ).catch(() => null);
+      const draws = result?.draws ?? [];
+      if (draws.length > 0) {
+        const image = await this.toPng(draws[draws.length - 1]);
+        if (image) return image;
+      }
+    }
+    const shot = await this.screenshot(project);
+    return `data:image/png;base64,${shot.image}`;
   }
 
   async recoDetail(recoId: number): Promise<RecoDetailResult> {
