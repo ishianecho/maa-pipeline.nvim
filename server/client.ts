@@ -690,7 +690,11 @@ export class RuntimeClient {
     return setup;
   }
 
-  async run(project: RuntimeProject, task: string) {
+  async run(
+    project: RuntimeProject,
+    task: string,
+    override?: Record<string, Record<string, unknown>>,
+  ) {
     if (this.running) throw new Error(`Task ${this.running} is already running`);
     this.running = task;
     this.log({ level: "info", message: `Starting task ${task}`, source: "maa-runtime" });
@@ -701,7 +705,12 @@ export class RuntimeClient {
         throw new RuntimeSetupError(setup?.error ?? "Failed to create Maa instance");
       this.active = { handle: setup.handle, task };
       try {
-        const succeeded = await this.request("postTask", setup.handle, task, []);
+        const succeeded = await this.request(
+          "postTask",
+          setup.handle,
+          task,
+          override && Object.keys(override).length > 0 ? override : {},
+        );
         this.log({
           level: succeeded ? "info" : "error",
           message: `Task ${task} ${succeeded ? "finished" : "failed"}`,

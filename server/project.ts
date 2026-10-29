@@ -206,6 +206,12 @@ export class ProjectManager {
     return [...this.projects.values()].find((project) => project.root === normalized);
   }
 
+  async ensureRoot(root) {
+    const existing = this.byRoot(root);
+    if (existing) return existing;
+    return this.ensure(path.join(absolutePath(root), "interface.json"));
+  }
+
   async ensure(file) {
     const existing = this.loaded(file);
     if (existing) return existing;

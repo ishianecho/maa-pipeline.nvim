@@ -39,6 +39,14 @@ import { ProjectManager } from "./project.ts";
 import { findImageCropper, runImageCropper } from "./image.ts";
 import { RuntimeClient, RuntimeSetupError } from "./client.ts";
 import {
+  interfaceTasks,
+  mergedInterface,
+  optionSavePlan,
+  resolveTaskRun,
+  savedSelections,
+  taskOptions,
+} from "./options.ts";
+import {
   commandRootArgument,
   filePathFromUri,
   moveFileTo,
@@ -56,7 +64,16 @@ function isControllerSetupFailure(error) {
   return error instanceof RuntimeSetupError && error.code === "maa.debug.init-controller-failed";
 }
 
-function requestControllerSelection(project, task?: string) {
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requestControllerSelection(
+  project,
+  task?: string,
+  selections?: unknown,
+  runInterface?: boolean,
+) {
   runtime.log({
     level: "warn",
     message: "The selected controller is no longer available; select it again",
@@ -66,7 +83,30 @@ function requestControllerSelection(project, task?: string) {
     root: project.root,
     controller: project.controller,
     task,
+    ...(selections ? { selections } : {}),
+    ...(runInterface ? { interface: true } : {}),
   });
+}
+
+function optionConfig(project) {
+  return { controller: project.controller, resource: project.resource };
+}
+
+function optionStore(project) {
+  return {
+    __settings: isRecord(project.config.__settings) ? project.config.__settings : undefined,
+    __options: isRecord(project.config.__options) ? project.config.__options : undefined,
+  };
+}
+
+function localeResolver(project) {
+  const langs = project.bundle.langBundle;
+  const index = langs.queryName(project.locale);
+  return (text) => {
+    if (typeof text !== "string" || !text.startsWith("$")) return text;
+    const entry = langs.queryKey(text.slice(1))[index];
+    return typeof entry?.value === "string" ? entry.value : text;
+  };
 }
 
 function report(error) {
@@ -404,6 +444,44 @@ const projectCommandHandlers = {
     return null;
   },
   [commands.listTasks]: ({ project, args }) => taskNames(project, args[1]),
+  [commands.interfaceTasks]: ({ project }) =>
+    interfaceTasks(mergedInterface(project), optionConfig(project), localeResolver(project)),
+  [commands.taskOptions]: ({ project, args }) => {
+    const view = taskOptions(
+      mergedInterface(project),
+      optionConfig(project),
+      args[1],
+      localeResolver(project),
+    );
+    return {
+      ...view,
+      saved: savedSelections(view, optionStore(project), args[1]),
+    };
+  },
+  [commands.saveTaskOptions]: async ({ project, args }) => {
+    const view = taskOptions(
+      mergedInterface(project),
+      optionConfig(project),
+      args[1],
+      localeResolver(project),
+    );
+    const plan = optionSavePlan(
+      view,
+      isRecord(args[2]) ? args[2] : {},
+      optionStore(project),
+      args[1],
+    );
+    const edit = await configWorkspaceEdit(project, {
+      __settings: plan.__settings,
+      __options: plan.__options,
+    });
+    const result = await connection.workspace.applyEdit(edit as any);
+    if (result.applied) {
+      project.config.__settings = plan.__settings;
+      project.config.__options = plan.__options;
+    }
+    return null;
+  },
   [commands.runTask]: ({ project, args }) => {
     if (!runtime.controllerReady(project)) {
       connection.sendNotification(notifications.configureController, {
@@ -415,6 +493,36 @@ const projectCommandHandlers = {
     void runtime.run(project, args[1]).catch((error) => {
       if (isControllerSetupFailure(error)) {
         requestControllerSelection(project, args[1]);
+        return;
+      }
+      runtime.log({
+        level: "error",
+        message: error instanceof Error ? error.message : String(error),
+        source: "maa-runtime",
+      });
+    });
+    return null;
+  },
+  [commands.runInterfaceTask]: ({ project, args }) => {
+    const selections = isRecord(args[2]) ? args[2] : undefined;
+    if (!runtime.controllerReady(project)) {
+      connection.sendNotification(notifications.configureController, {
+        root: project.root,
+        task: args[1],
+        selections,
+        interface: true,
+      });
+      return null;
+    }
+    const spec = resolveTaskRun(
+      mergedInterface(project),
+      optionConfig(project),
+      args[1],
+      selections,
+    );
+    void runtime.run(project, spec.entry, spec.override).catch((error) => {
+      if (isControllerSetupFailure(error)) {
+        requestControllerSelection(project, args[1], selections, true);
         return;
       }
       runtime.log({
@@ -460,7 +568,10 @@ connection.onExecuteCommand(async (params) => {
   if (globalHandler) return globalHandler(args);
 
   const root = commandRootArgument(args);
-  const project = root && projects?.byRoot(root);
+  let project = root && projects?.byRoot(root);
+  if (!project && root && projects) {
+    project = await projects.ensureRoot(root).catch(() => null);
+  }
   if (!project) return null;
   await project.refresh();
   const handler = projectCommandHandlers[params.command];
