@@ -1,7 +1,5 @@
 local M = {}
 
-local group = vim.api.nvim_create_augroup("MaaPipelineImgwin", { clear = true })
-
 local CELL_WIDTH = 10
 local CELL_HEIGHT = 20
 
@@ -88,40 +86,27 @@ function M.detach(win)
   end
 end
 
-vim.api.nvim_create_autocmd("WinClosed", {
-  group = group,
-  callback = function(args)
-    M.detach(tonumber(args.match))
-  end,
-})
+function M.resized(windows)
+  local wins = windows or vim.tbl_keys(placements)
+  for _, win in ipairs(wins) do
+    if placements[win] then
+      place(win)
+    end
+  end
+end
 
-vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
-  group = group,
-  callback = function(args)
-    local wins = args.event == "WinResized" and vim.v.event.windows or vim.tbl_keys(placements)
-    for _, win in ipairs(wins) do
-      if placements[win] then
+function M.tab_enter()
+  local tab = vim.api.nvim_get_current_tabpage()
+  for win, entry in pairs(placements) do
+    if vim.api.nvim_win_is_valid(win) then
+      if vim.api.nvim_win_get_tabpage(win) == tab then
         place(win)
+      elseif entry.shown then
+        vim.ui.img.del(entry.id)
+        entry.shown = false
       end
     end
-  end,
-})
-
-vim.api.nvim_create_autocmd("TabEnter", {
-  group = group,
-  callback = function()
-    local tab = vim.api.nvim_get_current_tabpage()
-    for win, entry in pairs(placements) do
-      if vim.api.nvim_win_is_valid(win) then
-        if vim.api.nvim_win_get_tabpage(win) == tab then
-          place(win)
-        elseif entry.shown then
-          vim.ui.img.del(entry.id)
-          entry.shown = false
-        end
-      end
-    end
-  end,
-})
+  end
+end
 
 return M

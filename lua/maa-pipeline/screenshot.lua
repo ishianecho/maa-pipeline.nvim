@@ -1,6 +1,6 @@
 local M = {}
 
-local imgwin = require("maa-pipeline.imgwin")
+local image = require("maa-pipeline.image")
 
 local trace_buffer_name = "maa-pipeline://trace"
 local log_buffer_name = "maa-pipeline://runtime"
@@ -32,9 +32,9 @@ local function fetch()
       if error or type(result) ~= "string" or not vim.api.nvim_win_is_valid(win) then
         return
       end
-      local decoded = imgwin.decode(result)
+      local decoded = image.decode(result)
       if decoded then
-        imgwin.attach(win, decoded)
+        image.attach(win, decoded)
       end
     end)
   end)
@@ -56,7 +56,7 @@ local function ensure_window(base_win)
     end
     return false
   end
-  if not imgwin.supported() then
+  if not image.supported() then
     if not warned then
       warned = true
       vim.notify("Terminal has no image support; live screenshot disabled", vim.log.levels.WARN)
