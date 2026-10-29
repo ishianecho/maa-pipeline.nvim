@@ -11,7 +11,8 @@ Neovim support for MaaFramework pipelines, reusing the parser and index from
   Code Lens, code actions, inlay hints, document links, workspace symbols,
   and color support
 - Filetype detection for Maa JSON/JSONC pipelines
-- Run MaaFramework tasks directly from Neovim
+- Run MaaFramework tasks directly from Neovim, or run an `interface.json` task
+  with its options applied as a pipeline override
 - Runtime logs with native `ft=log` highlighting, source/kind highlights,
   Lua filtering, on-demand entry details, and JSON or text export
 - Screenshot cropping with ImageCropper
@@ -90,6 +91,16 @@ require("maa-pipeline.nvim").setup({
       help = "g?", -- toggle the in-buffer help view; false or "" disables it
     },
   },
+  options = {
+    key = {
+      toggle = "e", -- edit the option under the cursor; false or "" disables it
+      reset = "d", -- reset the option under the cursor to its default; false or "" disables it
+      reset_all = "D", -- reset every option to its default; false or "" disables it
+      run = "r", -- run the task with the current choices; false or "" disables it
+      close = "q", -- close the panel; false or "" disables it
+      help = "g?", -- toggle the in-buffer help view; false or "" disables it
+    },
+  },
 })
 
 vim.lsp.config("maa_pipeline", {
@@ -123,12 +134,19 @@ while Neovim itself remains unelevated
 
 ## Commands
 
+The LSP client starts automatically when the working directory is inside a Maa
+project (an `interface.json/jsonc` found upwards), so commands such as
+`:MaaPipelineTaskRun` work as soon as Neovim starts, without opening a
+pipeline file first. Switching the working directory into another project
+starts a client for it too.
+
 | Command | Description |
 | --- | --- |
 | `:MaaPipelineSelectController` | Select and configure a Maa controller |
 | `:MaaPipelineStop` | Stop the running Maa task |
 | `:MaaPipelineRun` | Run the Maa task at the cursor |
 | `:MaaPipelinePickRun` | Pick a Maa task declared in the current file and run it |
+| `:MaaPipelineTaskRun` | Pick an `interface.json` task, confirm its options in a panel, and run it |
 | `:MaaPipelineScreenshot` | Select a controller, take a screenshot, crop it, and save or copy its ROI |
 | `:MaaPipelineTrace` | Open the node trace view in a tab, with the runtime log in a bottom window |
 | `:MaaPipelineVisionClean` | Delete the annotated screenshots accumulated under `<data_dir>/logs/vision` |
@@ -146,6 +164,41 @@ while Neovim itself remains unelevated
 | `Extract locale` | Move a localizable task reference into the localization file |
 
 ## Advanced
+
+### Task Options
+
+Node runs (`:MaaPipelineRun`, `:MaaPipelinePickRun`, the code action, and the
+trace `r` rerun) post the pipeline node directly, without options.
+`:MaaPipelineTaskRun` runs a task the way upstream clients do: it lists the
+tasks declared in `interface.json` (labels localized through the project's
+`languages` files, tasks limited to another `resource` hidden), then opens an
+options panel for the chosen task on every run; the task starts from the
+panel with the current choices.
+
+The panel opens in a tab and shows every option of the task in one buffer,
+grouped into `Task options` (options from the task itself) and `Global options`
+(from `global_option` and the current `resource`/`controller`) sections,
+prefilled with the saved values or the defaults. Rows marked `*` differ from
+the default; child options appear indented under the case that activates them.
+Switch options render as an italic label with a `[Y]`/`[N]` token instead of a
+value, input values are underlined, and option `description`s show in gray
+italics after the row.
+
+- `e` edits the row under the cursor (`select`/`switch` options cycle through
+  or pick from their cases, `checkbox` cases toggle, `input` fields edit in
+  place)
+- `d` / `D` reset the option under the cursor / every option to its default
+- `r` runs the task; `q` closes; `g?` toggles help
+
+Choices save to `config/maa_pi_config.json` automatically on every change,
+under `__settings` (settings-level options, shared across tasks) and
+`__options[task]` (task-level options); only values that differ from the
+default are stored, and `input` fields marked `password: true` are never
+written. Selecting a controller persists `controller` and `resource` to the
+same file. Choices become a `pipeline_override` merged in declaration order
+and sent with the task's `entry`, after which the task's own
+`pipeline_override` applies last. Options whose `controller` or `resource`
+list excludes the active ones, and `hotkey` options, are skipped.
 
 ### Log Filter
 

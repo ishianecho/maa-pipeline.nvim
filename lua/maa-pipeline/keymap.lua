@@ -16,6 +16,14 @@ local scopes = {
     { name = "close", key = "q", desc = "close the window" },
     { name = "help", key = "g?", desc = "toggle the help view" },
   },
+  options = {
+    { name = "toggle", key = "e", desc = "edit" },
+    { name = "reset", key = "d", desc = "reset the option under the cursor to its default" },
+    { name = "reset_all", key = "D", desc = "reset every option to its default" },
+    { name = "run", key = "r", desc = "run the task with the current choices" },
+    { name = "close", key = "q", desc = "close the panel" },
+    { name = "help", key = "g?", desc = "toggle the help view" },
+  },
 }
 
 local function valid(value)

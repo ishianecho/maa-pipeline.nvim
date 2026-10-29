@@ -9,7 +9,7 @@
 
 - LSP 功能：补全、悬停提示、跳转与引用、诊断、Code Lens、代码操作、内联提示、文档链接、工作区符号和颜色支持
 - Maa JSON/JSONC Pipeline 的文件类型检测
-- 直接运行 MaaFramework 任务
+- 直接运行 MaaFramework 任务，或按 `interface.json` 任务运行并应用其 option 作为 pipeline override
 - 运行日志支持原生 `ft=log` 高亮、来源和类型高亮、Lua 过滤、按需查看条目详情、JSON 或文本导出
 - 使用 ImageCropper 进行截图裁剪
 
@@ -87,6 +87,16 @@ require("maa-pipeline.nvim").setup({
       help = "g?", -- 切换缓冲区内帮助视图；false 或 "" 表示不注册
     },
   },
+  options = {
+    key = {
+      toggle = "e", -- 编辑光标处的选项；false 或 "" 表示不注册
+      reset = "d", -- 将光标处的选项重置为默认值；false 或 "" 表示不注册
+      reset_all = "D", -- 将全部选项重置为默认值；false 或 "" 表示不注册
+      run = "r", -- 以当前选择运行任务；false 或 "" 表示不注册
+      close = "q", -- 关闭面板；false 或 "" 表示不注册
+      help = "g?", -- 切换缓冲区内帮助视图；false 或 "" 表示不注册
+    },
+  },
 })
 
 vim.lsp.config("maa_pipeline", {
@@ -119,12 +129,17 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 
 ## 命令
 
+工作目录位于 Maa 项目内（向上找到 `interface.json/jsonc`）时，LSP 客户端会自动启动，
+因此 `:MaaPipelineTaskRun` 等命令在 Neovim 启动后即可使用，无需先打开 pipeline
+文件。切换工作目录到其他项目时也会自动为该项目启动客户端。
+
 | 命令 | 说明 |
 | --- | --- |
 | `:MaaPipelineSelectController` | 选择并配置 Maa 控制器 |
 | `:MaaPipelineStop` | 停止正在运行的 Maa 任务 |
 | `:MaaPipelineRun` | 运行光标所在的 Maa 任务 |
 | `:MaaPipelinePickRun` | 从当前文件已声明的任务中选择并运行 |
+| `:MaaPipelineTaskRun` | 选择 `interface.json` 中的任务，在面板中确认 option 后运行 |
 | `:MaaPipelineScreenshot` | 选择控制器、截图、裁剪，并保存图片或复制 ROI |
 | `:MaaPipelineTrace` | 在标签页中打开节点追踪视图，底部同时显示运行日志窗口 |
 | `:MaaPipelineVisionClean` | 删除 `<data_dir>/logs/vision` 下累积的识别标注截图 |
@@ -142,6 +157,32 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 | `Extract locale` | 将可本地化的任务引用移动到本地化文件 |
 
 ## 进阶
+
+### 任务 Option
+
+节点运行（`:MaaPipelineRun`、`:MaaPipelinePickRun`、代码操作以及追踪里的 `r` 重跑）直接
+post 该 pipeline 节点，不弹 option。`:MaaPipelineTaskRun` 按上游客户端的方式运行任务：先
+列出 `interface.json` 声明的任务（label 经项目 `languages` 翻译文件本地化，限定其他
+`resource` 的任务隐藏），然后每次运行都为所选任务打开 option 面板，任务从面板以当前选择
+启动。
+
+面板在独立标签页中展示任务的所有 option，按 `Task options`（任务自身的 option）与
+`Global options`（来自 `global_option` 和当前 `resource`/`controller`）两节分组，预填已保存的值
+或默认值。带 `*` 标记的行与默认值不同；子 option 缩进显示在启用它的 case 下方。
+switch option 渲染为斜体 label 加 `[Y]`/`[N]` 标记（不再显示值），input 的值带下划线，
+option 的 `description` 以灰色斜体显示在行尾。
+
+- `e` 编辑光标处的行（`select`/`switch` 轮换或从 case 列表选择，`checkbox` case
+  就地切换，`input` 字段就地输入）
+- `d` / `D` 将光标处的选项 / 全部选项重置为默认值
+- `r` 运行任务；`q` 关闭面板；`g?` 切换帮助
+
+选择在每次修改后自动保存到 `config/maa_pi_config.json` 的 `__settings`（settings 级
+option，跨任务共享）与 `__options[task]`（任务级 option）；只保存与默认值不同的项，
+标记 `password: true` 的 `input` 字段永不写入。选择控制器后 `controller` 与
+`resource` 同样保存到该文件。所有选择按声明顺序合并为 `pipeline_override`，随任务的
+`entry` 下发，任务自身的 `pipeline_override` 最后应用。`controller` 或 `resource`
+列表不包含当前资源的 option 以及 `hotkey` option 会被跳过。
 
 ### 日志过滤
 
