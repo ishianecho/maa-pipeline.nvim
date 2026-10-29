@@ -1,6 +1,5 @@
 local M = {}
 
-local detect = require("maa-pipeline.detect")
 local api = require("maa-pipeline.client")
 local controller = require("maa-pipeline.controller")
 
@@ -29,7 +28,7 @@ local function run_node(client)
 end
 
 local function run_pick_node(client)
-  local root = detect.get_buffer_maa_root(0)
+  local root = api.root()
   local file = vim.api.nvim_buf_get_name(0)
   if not root then
     vim.notify("No Maa project found for the current buffer", vim.log.levels.WARN)
@@ -60,9 +59,9 @@ local function run_pick_node(client)
 end
 
 local function run_task(client)
-  local root = detect.get_buffer_maa_root(0)
+  local root = client.config.root_dir
   if not root then
-    vim.notify("No Maa project found for the current buffer", vim.log.levels.WARN)
+    vim.notify("No Maa project found for the running client", vim.log.levels.WARN)
     return
   end
   api.request(client, "maa-pipeline.interfaceTasks", { root }, function(tasks)
@@ -105,7 +104,7 @@ function M.setup()
 
   local function with_root(callback)
     with_client(function(client)
-      local root = detect.get_buffer_maa_root(0)
+      local root = api.root()
       if not root then
         vim.notify("No Maa project found for the current buffer", vim.log.levels.WARN)
         return

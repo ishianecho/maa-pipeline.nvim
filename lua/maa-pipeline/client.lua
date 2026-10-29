@@ -2,6 +2,19 @@ local M = {}
 
 local detect = require("maa-pipeline.detect")
 
+local cached_root
+
+function M.root()
+  local root = detect.get_buffer_maa_root(0)
+  if not root then
+    return cached_root
+  end
+  if cached_root == nil then
+    cached_root = root
+  end
+  return root
+end
+
 function M.get()
   local clients = vim.lsp.get_clients({ name = "maa_pipeline", bufnr = 0 })
   local client = clients[1]
@@ -10,7 +23,7 @@ function M.get()
     client = client_id and vim.lsp.get_client_by_id(client_id) or nil
   end
   if not client then
-    local root = detect.get_buffer_maa_root(0)
+    local root = M.root()
     for _, candidate in ipairs(vim.lsp.get_clients({ name = "maa_pipeline" })) do
       if candidate.root_dir == root then
         client = candidate
