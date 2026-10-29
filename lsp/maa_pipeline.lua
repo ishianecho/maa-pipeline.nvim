@@ -8,7 +8,7 @@ return {
   filetypes = { "json", "jsonc" },
   root_dir = function(bufnr, cb)
     if detect.is_pipeline_file(vim.api.nvim_buf_get_name(bufnr)) then
-      cb(detect.project_root(bufnr))
+      cb(detect.get_buffer_maa_root(bufnr))
     end
   end,
   handlers = require("maa-pipeline.handlers"),

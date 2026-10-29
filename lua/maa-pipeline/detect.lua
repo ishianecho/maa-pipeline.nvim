@@ -1,27 +1,27 @@
 local M = {}
 
-local function exists(path)
-  return vim.uv.fs_stat(path) ~= nil
-end
-
-function M.project_root(bufnr)
-  local name = vim.api.nvim_buf_get_name(bufnr or 0)
-  if name == "" then
-    return vim.fn.getcwd()
-  end
+--- find maa root from a path
+--- @param path string
+function M.get_maa_root(path)
   local found = vim.fs.find({ "interface.json", "interface.jsonc" }, {
-    path = vim.fs.dirname(name),
+    path = path,
     upward = true,
     type = "file",
   })
   if #found > 0 then
     return vim.fs.dirname(found[1])
   end
-  return vim.fs.dirname(name)
+  return nil
 end
 
-function M.is_maa_project(root)
-  return exists(root .. "/src/MaaCore") or (exists(root .. "/tasks") and exists(root .. "/template"))
+--- find maa root from a buffer (or else from cwd)
+--- @param bufnr number
+function M.get_buffer_maa_root(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr or 0)
+  if name == "" then
+    return M.get_maa_root(vim.fn.getcwd())
+  end
+  return M.get_maa_root(vim.fs.dirname(name))
 end
 
 function M.is_pipeline_file(name)
@@ -39,12 +39,7 @@ function M.is_pipeline_file(name)
   if normalized:match("/pipeline/[^/]+%.jsonc?$") or normalized:match("/tasks/[^/]+%.jsonc?$") then
     return true
   end
-  local found = vim.fs.find({ "interface.json", "interface.jsonc" }, {
-    path = vim.fs.dirname(name),
-    upward = true,
-    type = "file",
-  })
-  return #found > 0
+  return M.get_maa_root(vim.fs.dirname(normalized)) ~= nil
 end
 
 function M.autoset(bufnr)
@@ -55,17 +50,6 @@ function M.autoset(bufnr)
     return true
   end
   return false
-end
-
-function M.setup_autoset(group)
-  group = group or vim.api.nvim_create_augroup("MaaPipelineFiletype", { clear = true })
-  vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-    group = group,
-    pattern = "*.json,*.jsonc",
-    callback = function(args)
-      M.autoset(args.buf)
-    end,
-  })
 end
 
 return M
