@@ -161,8 +161,8 @@ function M.show(client, reco_id)
   end
   api.request(client, "maa-pipeline.recoDetail", { reco_id }, function(result)
     local images = {}
-    for _, image in ipairs(list(result.images)) do
-      local decoded = image.decode(image)
+    for _, item in ipairs(list(result.images)) do
+      local decoded = image.decode(item)
       if decoded then
         table.insert(images, decoded)
       end
