@@ -16,7 +16,7 @@ local function request(client, command, arguments, callback)
   end)
 end
 
-local function fill_fields(fields, index, values, client, done)
+local function collect_fields(fields, index, values, client, done)
   local field = fields[index]
   if not field then
     done(values)
@@ -33,7 +33,7 @@ local function fill_fields(fields, index, values, client, done)
         return
       end
       values[field.key] = item.value
-      fill_fields(fields, index + 1, values, client, done)
+      collect_fields(fields, index + 1, values, client, done)
     end)
   else
     vim.ui.input({ prompt = field.label .. ": ", default = field.default }, function(value)
@@ -45,7 +45,7 @@ local function fill_fields(fields, index, values, client, done)
           local number = tonumber(value)
           if not number then
             log.warn(client.id, field.label .. " must be a number")
-            fill_fields(fields, index + 1, values, client, done)
+            collect_fields(fields, index + 1, values, client, done)
             return
           end
           values[field.key] = number
@@ -53,7 +53,7 @@ local function fill_fields(fields, index, values, client, done)
           values[field.key] = value
         end
       end
-      fill_fields(fields, index + 1, values, client, done)
+      collect_fields(fields, index + 1, values, client, done)
     end)
   end
 end
@@ -92,7 +92,7 @@ local function configure(client, root, controller, after)
           return
         end
       end
-      fill_fields(result.fields or {}, 1, {}, client, function(values)
+      collect_fields(result.fields or {}, 1, {}, client, function(values)
         save({ [result.config_key] = values })
       end)
     end

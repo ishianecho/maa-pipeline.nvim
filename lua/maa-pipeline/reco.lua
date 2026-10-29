@@ -1,6 +1,8 @@
 local M = {}
 
-local imgwin = require("maa-pipeline.imgwin")
+local image = require("maa-pipeline.image")
+local highlights = require("maa-pipeline.highlights")
+local api = require("maa-pipeline.client")
 
 local namespace = vim.api.nvim_create_namespace("maa_pipeline_reco")
 
@@ -74,7 +76,7 @@ local function map_quit(buffer)
 end
 
 local function show_detail(reco_id, info, images)
-  local support = imgwin.supported()
+  local support = image.supported()
   local had_images = #images > 0
   if had_images and not support then
     images = {}
@@ -127,7 +129,7 @@ local function show_detail(reco_id, info, images)
   end
   vim.api.nvim_set_current_buf(buffer)
   for index, image in ipairs(images) do
-    imgwin.attach(windows[index], image)
+    image.attach(windows[index], image)
   end
 
   local status = info.hit and "HIT" or "MISS"
@@ -137,14 +139,13 @@ local function show_detail(reco_id, info, images)
     vim.api.nvim_buf_add_highlight(
       buffer,
       namespace,
-      info.hit and "MaaPipelineRecoHit" or "MaaPipelineRecoMiss",
+      info.hit and highlights.reco.hit or highlights.reco.miss,
       0,
       start - 1,
       start - 1 + #status
     )
   end
-  vim.cmd("highlight default link MaaPipelineRecoHit String")
-  vim.cmd("highlight default link MaaPipelineRecoMiss ErrorMsg")
+  highlights.define()
   if had_images and #images == 0 then
     return
   end
@@ -158,24 +159,15 @@ function M.show(client, reco_id)
     vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
     return
   end
-  client:request("workspace/executeCommand", {
-    command = "maa-pipeline.recoDetail",
-    arguments = { reco_id },
-  }, function(error, result)
-    vim.schedule(function()
-      if error then
-        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
-        return
+  api.request(client, "maa-pipeline.recoDetail", { reco_id }, function(result)
+    local images = {}
+    for _, image in ipairs(list(result.images)) do
+      local decoded = image.decode(image)
+      if decoded then
+        table.insert(images, decoded)
       end
-      local images = {}
-      for _, image in ipairs(list(result.images)) do
-        local decoded = imgwin.decode(image)
-        if decoded then
-          table.insert(images, decoded)
-        end
-      end
-      show_detail(reco_id, result.info or {}, images)
-    end)
+    end
+    show_detail(reco_id, result.info or {}, images)
   end)
 end
 
