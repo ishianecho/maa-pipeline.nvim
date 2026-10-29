@@ -92,6 +92,14 @@ function optionConfig(project) {
   return { controller: project.controller, resource: project.resource };
 }
 
+function resolveRunSpec(project, taskName, selections?) {
+  const object = mergedInterface(project);
+  const config = optionConfig(project);
+  const view = taskOptions(object, config, taskName, localeResolver(project));
+  const saved = savedSelections(view, optionStore(project), taskName);
+  return resolveTaskRun(object, config, taskName, selections ?? saved);
+}
+
 function optionStore(project) {
   return {
     __settings: isRecord(project.config.__settings) ? project.config.__settings : undefined,
@@ -490,7 +498,8 @@ const projectCommandHandlers = {
       });
       return null;
     }
-    void runtime.run(project, args[1]).catch((error) => {
+    const spec = resolveRunSpec(project, args[1]);
+    void runtime.run(project, spec.entry, spec.override).catch((error) => {
       if (isControllerSetupFailure(error)) {
         requestControllerSelection(project, args[1]);
         return;
@@ -514,12 +523,7 @@ const projectCommandHandlers = {
       });
       return null;
     }
-    const spec = resolveTaskRun(
-      mergedInterface(project),
-      optionConfig(project),
-      args[1],
-      selections,
-    );
+    const spec = resolveRunSpec(project, args[1], selections);
     void runtime.run(project, spec.entry, spec.override).catch((error) => {
       if (isControllerSetupFailure(error)) {
         requestControllerSelection(project, args[1], selections, true);

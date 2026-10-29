@@ -153,6 +153,32 @@ test("applies defaults, nested children, and task override without selections", 
   });
 });
 
+test("deep-merges nested override objects across selected cases", () => {
+  const object = {
+    option: {
+      日程: {
+        type: "checkbox",
+        default_case: ["一", "二"],
+        cases: [
+          { name: "一", pipeline_override: { Gate: { attach: { monday: true } } } },
+          { name: "二", pipeline_override: { Gate: { attach: { tuesday: true } } } },
+          {
+            name: "三",
+            pipeline_override: { Gate: { attach: { monday: false, wednesday: true } } },
+          },
+        ],
+      },
+    },
+    task: [{ name: "收集", entry: "Start", option: ["日程"] }],
+  };
+  const spec = resolveTaskRun(object, {}, "收集", undefined);
+  assert.deepEqual(spec.override, { Gate: { attach: { monday: true, tuesday: true } } });
+  const picked = resolveTaskRun(object, {}, "收集", { 日程: ["一", "三"] });
+  assert.deepEqual(picked.override, {
+    Gate: { attach: { monday: false, wednesday: true } },
+  });
+});
+
 test("honors user selections including input conversion and checkbox choices", () => {
   const spec = resolveTaskRun(interface_, config, "每日", {
     吃药: "Yes",

@@ -302,11 +302,23 @@ export function optionSavePlan(
   return { __settings: settings, __options: { ...(store.__options ?? {}), [taskName]: task } };
 }
 
+function mergeFields(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    result[key] =
+      isObject(result[key]) && isObject(value) ? mergeFields(result[key], value) : value;
+  }
+  return result;
+}
+
 function mergeOverride(target: Record<string, Record<string, unknown>>, override: unknown): void {
   if (!isObject(override)) return;
   for (const [node, fields] of Object.entries(override)) {
     if (!isObject(fields)) continue;
-    target[node] = { ...(target[node] ?? {}), ...fields };
+    target[node] = mergeFields(target[node] ?? {}, fields);
   }
 }
 
