@@ -2,6 +2,8 @@ local M = {}
 
 local help = require("maa-pipeline.help")
 local keymap = require("maa-pipeline.keymap")
+local highlights = require("maa-pipeline.highlights")
+local api = require("maa-pipeline.client")
 
 local buffer_name = "maa-pipeline://trace"
 local namespace = vim.api.nvim_create_namespace("maa_pipeline_trace")
@@ -16,13 +18,6 @@ local state = {
 
 local METRICS_COL = 60
 local MIN_NAME = 16
-
-local status_hl = {
-  succeeded = "MaaPipelineTraceSucceeded",
-  running = "MaaPipelineTraceRunning",
-  failed = "MaaPipelineTraceFailed",
-  missed = "MaaPipelineTraceMissed",
-}
 
 local STATUS_TOKEN = {
   succeeded = "hit",
@@ -70,10 +65,7 @@ local function format_row(col, prefix, name, cells)
 end
 
 local function configure_highlights()
-  vim.cmd("highlight default link MaaPipelineTraceSucceeded String")
-  vim.cmd("highlight default link MaaPipelineTraceFailed ErrorMsg")
-  vim.cmd("highlight default link MaaPipelineTraceRunning MoreMsg")
-  vim.cmd("highlight default link MaaPipelineTraceMissed WarningMsg")
+  highlights.define()
 end
 
 local function current_entry()
@@ -136,16 +128,7 @@ local function rerun_node()
     vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
     return
   end
-  client:request("workspace/executeCommand", {
-    command = "maa-pipeline.runTask",
-    arguments = { client.config.root_dir, entry.name },
-  }, function(error)
-    vim.schedule(function()
-      if error then
-        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
-      end
-    end)
-  end)
+  api.request(client, "maa-pipeline.runTask", { client.config.root_dir, entry.name })
 end
 
 local function sync_screenshot(snapshot)
@@ -161,19 +144,10 @@ local function refresh()
     vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
     return
   end
-  client:request("workspace/executeCommand", {
-    command = "maa-pipeline.traceSnapshot",
-    arguments = {},
-  }, function(error, result)
-    vim.schedule(function()
-      if error then
-        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
-        return
-      end
-      state.snapshot = result
-      sync_screenshot(result)
-      M.render()
-    end)
+  api.request(client, "maa-pipeline.traceSnapshot", {}, function(result)
+    state.snapshot = result
+    sync_screenshot(result)
+    M.render()
   end)
 end
 
@@ -221,6 +195,10 @@ local function render_snapshot(lines)
     state.line_entries[#lines] = entry
   end
 
+  local hint = help.hint("trace")
+  if hint then
+    add(hint, nil)
+  end
   if not snapshot then
     add("No Maa task traced yet; run a task and press " .. keymap.get("trace", "refresh") .. " to refresh", nil)
   else
@@ -298,8 +276,9 @@ function M.render()
   state.line_entries = {}
   state.fold_levels = {}
 
+  local marks
   if state.help then
-    lines = help.lines("Maa pipeline trace", "trace", { legend })
+    lines, marks = help.lines("Maa pipeline trace", "trace", { legend })
   else
     render_snapshot(lines)
   end
@@ -308,12 +287,18 @@ function M.render()
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
   vim.bo[buffer].modifiable = false
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  highlights.define()
+  if marks then
+    help.apply_desc_marks(buffer, namespace, marks)
+  elseif help.hint("trace") then
+    help.highlight_hint(buffer, namespace, 0)
+  end
   apply_folds(buffer)
   if not state.help then
     for row, entry in pairs(state.line_entries) do
-      if status_hl[entry.status] then
+      if highlights.trace[entry.status] then
         local indent = (entry.depth or 0) * 2
-        vim.api.nvim_buf_add_highlight(buffer, namespace, status_hl[entry.status], row - 1, indent, indent + 6)
+        vim.api.nvim_buf_add_highlight(buffer, namespace, highlights.trace[entry.status], row - 1, indent, indent + 6)
       end
     end
   end
