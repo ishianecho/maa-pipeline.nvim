@@ -16,17 +16,8 @@ local state = {
 
 local render
 
-local family_hl = {
-  Task = "MaaPipelineLogTask",
-  Node = "MaaPipelineLogNode",
-  Next = "MaaPipelineLogNext",
-  Reco = "MaaPipelineLogReco",
-  Action = "MaaPipelineLogAction",
-  Loading = "MaaPipelineLogLoading",
-  Freeze = "MaaPipelineLogFreeze",
-  Ctrl = "MaaPipelineLogCtrl",
-  Plain = "MaaPipelineLogPlain",
-}
+local highlights = require("maa-pipeline.highlights")
+local family_hl = highlights.log.family
 
 local function is_null(value)
   return value == nil or value == vim.NIL
@@ -128,7 +119,7 @@ local function render_header(parts, segments, entry)
     parts,
     segments,
     string.format("[%s]", entry.source or "unknown"),
-    "MaaPipelineLogSource",
+    highlights.log.source,
     "source",
     entry.source or "unknown"
   )
@@ -349,7 +340,7 @@ end
 ]],
       expression
     ),
-    "MaaPipelineLogFilter"
+    highlights.log.filter
   )
   if not factory then
     return nil, factory_error
@@ -377,22 +368,14 @@ local function ensure_buffer(client_id)
       reco = M.open_reco,
       detail = M.show_detail,
     })
+    local hint = help.hint("log")
+    if hint then
+      vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { hint })
+      help.highlight_hint(buffer, namespace, 0)
+    end
   end
   vim.b[buffer].maa_pipeline_client_id = client_id
-  vim.cmd("highlight default link MaaPipelineLogSource Title")
-  for _, highlight in pairs(family_hl) do
-    local target = highlight == "MaaPipelineLogTask" and "Title"
-      or highlight == "MaaPipelineLogNode" and "Identifier"
-      or highlight == "MaaPipelineLogNext" and "Statement"
-      or highlight == "MaaPipelineLogReco" and "Type"
-      or highlight == "MaaPipelineLogAction" and "Function"
-      or highlight == "MaaPipelineLogLoading" and "Special"
-      or highlight == "MaaPipelineLogFreeze" and "PreProc"
-      or highlight == "MaaPipelineLogCtrl" and "Constant"
-      or "Normal"
-    vim.cmd(string.format("highlight default link %s %s", highlight, target))
-  end
-  return buffer
+  highlights.define()  return buffer
 end
 
 local function byte_range(parts, start_index, finish_index)
@@ -475,11 +458,13 @@ function M.toggle_help()
   local buffer = ensure_buffer(0)
   state.line_entries = {}
   state.line_tokens = {}
-  local lines = help.lines("Maa pipeline log", "log", { help.filter_reference })
+  local lines, marks = help.lines("Maa pipeline log", "log", { help.filter_reference })
   vim.bo[buffer].modifiable = true
   vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
   vim.bo[buffer].modifiable = false
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  highlights.define()
+  help.apply_desc_marks(buffer, namespace, marks)
 end
 
 function M.append(client_id, result)
@@ -522,10 +507,14 @@ end
 function M.set_filter(filter)
   state.filter = filter or {}
   local buffer = ensure_buffer(0)
+  local hint = help.hint("log")
   vim.bo[buffer].modifiable = true
-  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {})
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { hint or "" })
   vim.bo[buffer].modifiable = false
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  if hint then
+    help.highlight_hint(buffer, namespace, 0)
+  end
   state.line_entries = {}
   state.line_tokens = {}
   for _, entry in ipairs(state.entries) do
