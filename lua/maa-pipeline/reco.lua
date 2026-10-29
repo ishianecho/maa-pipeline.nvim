@@ -128,8 +128,8 @@ local function show_detail(reco_id, info, images)
     vim.api.nvim_set_current_win(info_win)
   end
   vim.api.nvim_set_current_buf(buffer)
-  for index, image in ipairs(images) do
-    image.attach(windows[index], image)
+  for index, item in ipairs(images) do
+    image.attach(windows[index], item)
   end
 
   local status = info.hit and "HIT" or "MISS"
