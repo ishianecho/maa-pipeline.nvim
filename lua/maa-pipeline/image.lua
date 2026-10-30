@@ -65,7 +65,7 @@ local function place(win)
 end
 
 function M.attach(win, decoded)
-  M.detach(win)
+  local previous = placements[win]
   placements[win] = {
     data = decoded.data,
     width = decoded.width,
@@ -74,6 +74,9 @@ function M.attach(win, decoded)
     shown = false,
   }
   place(win)
+  if previous and previous.shown then
+    vim.ui.img.del(previous.id)
+  end
 end
 
 function M.detach(win)
