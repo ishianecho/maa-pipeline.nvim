@@ -449,9 +449,7 @@ export class RuntimeClient {
     if (name === "$fixed") {
       return {
         config_key: "vscFixed",
-        fields: [
-          { key: "image", label: "Image path", required: true, completion: "file" },
-        ],
+        fields: [{ key: "image", label: "Image path", required: true, completion: "file" }],
       };
     }
     const controller = project.bundle.content.object.controller?.find(
