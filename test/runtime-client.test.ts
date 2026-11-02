@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as esbuild from "esbuild";
@@ -40,7 +40,7 @@ const maa = new Proxy({}, {
 `,
     },
   });
-  return (await import(pathToFileURL(output).href)).RuntimeClient;
+  return await import(pathToFileURL(output).href);
 }
 
 function testProject() {
@@ -75,8 +75,22 @@ function testProjectAt(root: string) {
   return project;
 }
 
+test("resolves the fixed image path against the home dir and project root", async (t) => {
+  const { resolveFixedImage } = await loadRuntimeClient(t);
+  assert.deepEqual(resolveFixedImage({ vscFixed: { image: "~/pictures/screen.png" } }, "/maa"), {
+    vscFixed: { image: path.join(homedir(), "pictures/screen.png") },
+  });
+  assert.deepEqual(resolveFixedImage({ vscFixed: { image: "debug/screen.png" } }, "/maa"), {
+    vscFixed: { image: "/maa/debug/screen.png" },
+  });
+  assert.deepEqual(resolveFixedImage({ vscFixed: { image: "/tmp/a~b.png" } }, "/maa"), {
+    vscFixed: { image: "/tmp/a~b.png" },
+  });
+  assert.deepEqual(resolveFixedImage({ controller: "win32" }, "/maa"), { controller: "win32" });
+});
+
 test("does not retry setup after an external agent fails", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const logs = [];
   const calls = [];
   const client = new RuntimeClient({
@@ -98,7 +112,7 @@ test("does not retry setup after an external agent fails", async (t) => {
 });
 
 test("logs failed external agents and reports them stopped to the runtime", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const logs = [];
   const requests = [];
   const client = new RuntimeClient(
@@ -120,7 +134,7 @@ test("logs failed external agents and reports them stopped to the runtime", asyn
 });
 
 test("allows daemon agent launchers to exit without treating them as failures", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const logs = [];
   const requests = [];
   const client = new RuntimeClient(
@@ -143,7 +157,7 @@ test("allows daemon agent launchers to exit without treating them as failures", 
 });
 
 test("reuses a daemon instance while the controller type is unchanged", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const calls = [];
   const client = new RuntimeClient({ sendNotification: () => {} } as any, { daemon: true });
   (client as any).request = async (method, ...args) => {
@@ -161,7 +175,7 @@ test("reuses a daemon instance while the controller type is unchanged", async (t
 });
 
 test("feeds trace notifications to the collector and emits trace snapshots", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const notifications = [];
   const client = new RuntimeClient({
     sendNotification: (method: string, params: any) => notifications.push({ method, params }),
@@ -188,7 +202,7 @@ test("feeds trace notifications to the collector and emits trace snapshots", asy
 });
 
 test("resolves the framework from a node_modules dependency", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const pkgDir = path.join(root, "node_modules", "@maaxyz", "maa-node");
@@ -209,7 +223,7 @@ test("resolves the framework from a node_modules dependency", async (t) => {
 });
 
 test("finds a MaaNode.node deployment anywhere in the project and reads its version", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const deploy = path.join(root, "custom", "nested", "maafw");
@@ -227,7 +241,7 @@ test("finds a MaaNode.node deployment anywhere in the project and reads its vers
 });
 
 test("reads the version marker placed next to the deployment directory", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   const deploy = path.join(root, "install", "maafw");
@@ -245,7 +259,7 @@ test("reads the version marker placed next to the deployment directory", async (
 });
 
 test("anchors the search at the git repository root above the project root", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const repo = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
   t.after(async () => rm(repo, { recursive: true, force: true }));
   const deploy = path.join(repo, "install", "maafw");
@@ -264,7 +278,7 @@ test("anchors the search at the git repository root above the project root", asy
 });
 
 test("prepare throws when the project ships no MaaFramework", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const root = await mkdtemp(path.join(tmpdir(), "maa-resolve-"));
   t.after(async () => rm(root, { recursive: true, force: true }));
   await mkdir(path.join(root, "assets"), { recursive: true });
@@ -277,7 +291,7 @@ test("prepare throws when the project ships no MaaFramework", async (t) => {
 });
 
 test("requests recognition details against the traced instance", async (t) => {
-  const RuntimeClient = await loadRuntimeClient(t);
+  const { RuntimeClient } = await loadRuntimeClient(t);
   const requests = [];
   const client = new RuntimeClient({ sendNotification: () => {} } as any);
   (client as any).rpc = {

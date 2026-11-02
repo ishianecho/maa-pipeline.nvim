@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import net from "node:net";
+import { homedir } from "node:os";
 import path from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 
@@ -40,11 +41,19 @@ export class RuntimeSetupError extends Error {
   }
 }
 
+export function resolveFixedImage(config: any, root: string) {
+  const fixed = config?.vscFixed;
+  if (!fixed || typeof fixed.image !== "string") return config;
+  const image = fixed.image.replace(/^~(?=\/|$)/, homedir());
+  return { ...config, vscFixed: { ...fixed, image: path.resolve(root, image) } };
+}
+
 function runtimeConfig(project: RuntimeProject, constants: any) {
   const data = project.bundle.content.object;
-  const controller = buildControllerRuntime(data, project.config, constants);
+  const config = resolveFixedImage(project.config, project.root);
+  const controller = buildControllerRuntime(data, config, constants);
   if (typeof controller === "string") throw new Error(controller);
-  const resource = buildResourceRuntime(data, project.config);
+  const resource = buildResourceRuntime(data, config);
   if (typeof resource === "string") throw new Error(resource);
   return {
     root: project.root,
@@ -437,7 +446,9 @@ export class RuntimeClient {
     if (name === "$fixed") {
       return {
         config_key: "vscFixed",
-        fields: [{ key: "image", label: "Absolute image path", required: true }],
+        fields: [
+          { key: "image", label: "Image path", required: true, completion: "file" },
+        ],
       };
     }
     const controller = project.bundle.content.object.controller?.find(

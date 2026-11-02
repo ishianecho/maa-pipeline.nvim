@@ -36,7 +36,7 @@ local function collect_fields(fields, index, values, client, done)
       collect_fields(fields, index + 1, values, client, done)
     end)
   else
-    vim.ui.input({ prompt = field.label .. ": ", default = field.default }, function(value)
+    vim.ui.input({ prompt = field.label .. ": ", default = field.default, completion = field.completion }, function(value)
       if value == nil or (field.required and value == "") then
         return
       end
