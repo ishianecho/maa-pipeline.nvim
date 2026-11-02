@@ -361,6 +361,9 @@ export class RuntimeClient {
     });
     rpc.onRequest(subToHostReq, async (method, args) => {
       if (method === "pushNotify") {
+        if ((args[1] as Record<string, unknown> | undefined)?.entry === "MaaTaskerPostStop") {
+          return null;
+        }
         try {
           this.trace.ingest(String(args[0]), args[1]);
         } catch {
