@@ -234,6 +234,30 @@ raw and raw:find("recognition", 1, true)
 
 终端不支持图片显示时只打开文本详情缓冲区。识别详情在 Maa 实例存活期间可用：任务运行中，或 `runtime.daemon = true` 时任务结束后。
 
+### 图片渲染器
+
+图片默认通过 `vim.ui.img`（Kitty 图形协议，仅支持 PNG）显示。要接入其他图片插件，
+覆盖 renderer 表即可：
+
+```lua
+local image = require("maa-pipeline.image")
+
+image.renderer = vim.tbl_extend("force", image.default_renderer, {
+  attach = function(win, decoded)
+    -- decoded = { data_url, data, width, height }
+    return my_plugin.show(win, decoded.data)
+  end,
+  detach = function(handle)
+    my_plugin.hide(handle)
+  end,
+})
+```
+
+插件内所有图片（实时截图与识别详情）都经由
+`supported(win)`/`attach(win, decoded)`/`update(handle, win)`/`hide(handle)`/`detach(handle)`
+这几个回调显示；`attach` 返回一个不透明句柄，回传给其余回调。可以只替换需要的回调，
+也可以替换整个表。
+
 ### 自定义渲染
 
 ```lua

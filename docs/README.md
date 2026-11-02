@@ -280,6 +280,31 @@ Without terminal image support only the text buffer opens. Details stay
 available while the Maa instance lives: during a task, or after it when
 `runtime.daemon = true`.
 
+### Image Renderer
+
+Images are displayed through `vim.ui.img` (Kitty graphics protocol, PNG only)
+by default. To plug in another image plugin, override the renderer table:
+
+```lua
+local image = require("maa-pipeline.image")
+
+image.renderer = vim.tbl_extend("force", image.default_renderer, {
+  attach = function(win, decoded)
+    -- decoded = { data_url, data, width, height }
+    return my_plugin.show(win, decoded.data)
+  end,
+  detach = function(handle)
+    my_plugin.hide(handle)
+  end,
+})
+```
+
+`supported(win)`/`attach(win, decoded)`/`update(handle, win)`/`hide(handle)`/
+`detach(handle)` route every image shown by the plugin (live screenshot and
+recognition details) through the renderer; `attach` returns an opaque handle
+passed back to the other callbacks. Replace only the callbacks you need or the
+whole table.
+
 ### Custom Render
 
 ```lua
