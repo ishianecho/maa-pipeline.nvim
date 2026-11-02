@@ -398,7 +398,7 @@ local function render_help()
       "and disappear when that case is not chosen.",
       "",
       "Choices save to config/maa_pi_config.json automatically on every",
-      "change; :MaaPipelineTaskRun opens this panel before every run,",
+      "change; :MaaPIRunTask opens this panel before every run,",
       "prefilled with the saved choices.",
       "",
       "Levels: Task options come from the task itself; Global options come",

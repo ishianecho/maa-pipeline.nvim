@@ -44,14 +44,14 @@ function M.setup(options)
       local registered = hotkey.register(options.stop_hotkey, cmds.stop_run)
       if not registered then
         vim.schedule(function()
-          vim.notify("Failed to register MaaPipelineStop hotkey: " .. options.stop_hotkey, vim.log.levels.WARN)
+          vim.notify("Failed to register MaaPIStop hotkey: " .. options.stop_hotkey, vim.log.levels.WARN)
         end)
       end
     end
   elseif jit.os == "Windows" then
     vim.schedule(function()
       vim.notify(
-        'MaaPipelineStop hotkey is disabled; set setup({ stop_hotkey = "Ctrl+Alt+S" }) to enable it',
+        'MaaPIStop hotkey is disabled; set setup({ stop_hotkey = "Ctrl+Alt+S" }) to enable it',
         vim.log.levels.INFO
       )
     end)

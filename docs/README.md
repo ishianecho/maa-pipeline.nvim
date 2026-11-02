@@ -136,23 +136,23 @@ while Neovim itself remains unelevated
 
 The LSP client starts automatically when the working directory is inside a Maa
 project (an `interface.json/jsonc` found upwards), so commands such as
-`:MaaPipelineTaskRun` work as soon as Neovim starts, without opening a
+`:MaaPIRunTask` work as soon as Neovim starts, without opening a
 pipeline file first. Switching the working directory into another project
 starts a client for it too.
 
 | Command | Description |
 | --- | --- |
-| `:MaaPipelineSelectController` | Select and configure a Maa controller |
-| `:MaaPipelineStop` | Stop the running Maa task |
-| `:MaaPipelineRun` | Run the Maa task at the cursor |
-| `:MaaPipelinePickRun` | Pick a Maa task declared in the current file and run it |
-| `:MaaPipelineTaskRun` | Pick an `interface.json` task, confirm its options in a panel, and run it |
-| `:MaaPipelineScreenshot` | Select a controller, take a screenshot, crop it, and save or copy its ROI |
-| `:MaaPipelineTrace` | Open the node trace view in a tab, with the runtime log in a bottom window |
-| `:MaaPipelineVisionClean` | Delete the annotated screenshots accumulated under `<data_dir>/logs/vision` |
-| `:MaaPipelineLogFilter [expression]` | Filter runtime logs with a Lua expression; an empty expression clears the filter |
-| `:MaaPipelineLogExportJson` | Export filtered runtime logs as JSON |
-| `:MaaPipelineLogExportText` | Export filtered runtime logs as plain text |
+| `:MaaPISelectController` | Select and configure a Maa controller |
+| `:MaaPIStop` | Stop the running Maa task |
+| `:MaaPIRunNode` | Run the Maa task at the cursor |
+| `:MaaPIRunPickBufferNode` | Pick a Maa task declared in the current file and run it |
+| `:MaaPIRunTask` | Pick an `interface.json` task, confirm its options in a panel, and run it |
+| `:MaaPIScreenshot` | Select a controller, take a screenshot, crop it, and save or copy its ROI |
+| `:MaaPITrace` | Open the node trace view in a tab, with the runtime log in a bottom window |
+| `:MaaPIVisionClean` | Delete the annotated screenshots accumulated under `<data_dir>/logs/vision` |
+| `:MaaPILogFilter [expression]` | Filter runtime logs with a Lua expression; an empty expression clears the filter |
+| `:MaaPILogExportJson` | Export filtered runtime logs as JSON |
+| `:MaaPILogExportText` | Export filtered runtime logs as plain text |
 
 ## Code Actions
 
@@ -167,9 +167,9 @@ starts a client for it too.
 
 ### Task Options
 
-Node runs (`:MaaPipelineRun`, `:MaaPipelinePickRun`, the code action, and the
+Node runs (`:MaaPIRunNode`, `:MaaPIRunPickBufferNode`, the code action, and the
 trace `r` rerun) post the pipeline node directly, without options.
-`:MaaPipelineTaskRun` runs a task the way upstream clients do: it lists the
+`:MaaPIRunTask` runs a task the way upstream clients do: it lists the
 tasks declared in `interface.json` (labels localized through the project's
 `languages` files, tasks limited to another `resource` hidden), then opens an
 options panel for the chosen task on every run; the task starts from the
@@ -224,7 +224,7 @@ Available fields: `level`, `source`, `family`, `phase`, `name`, `raw`, `kind`,
 
 ### Node Trace
 
-`:MaaPipelineTrace` opens a dedicated tab: the node trace view on top and the
+`:MaaPITrace` opens a dedicated tab: the node trace view on top and the
 runtime log buffer in a bottom window. The tab also opens automatically
 whenever a task starts. While a task runs, the view refreshes
 live from the runtime notifications; press `r` to refresh manually. While a

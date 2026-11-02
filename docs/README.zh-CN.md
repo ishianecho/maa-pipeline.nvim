@@ -130,22 +130,22 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 ## 命令
 
 工作目录位于 Maa 项目内（向上找到 `interface.json/jsonc`）时，LSP 客户端会自动启动，
-因此 `:MaaPipelineTaskRun` 等命令在 Neovim 启动后即可使用，无需先打开 pipeline
+因此 `:MaaPIRunTask` 等命令在 Neovim 启动后即可使用，无需先打开 pipeline
 文件。切换工作目录到其他项目时也会自动为该项目启动客户端。
 
 | 命令 | 说明 |
 | --- | --- |
-| `:MaaPipelineSelectController` | 选择并配置 Maa 控制器 |
-| `:MaaPipelineStop` | 停止正在运行的 Maa 任务 |
-| `:MaaPipelineRun` | 运行光标所在的 Maa 任务 |
-| `:MaaPipelinePickRun` | 从当前文件已声明的任务中选择并运行 |
-| `:MaaPipelineTaskRun` | 选择 `interface.json` 中的任务，在面板中确认 option 后运行 |
-| `:MaaPipelineScreenshot` | 选择控制器、截图、裁剪，并保存图片或复制 ROI |
-| `:MaaPipelineTrace` | 在标签页中打开节点追踪视图，底部同时显示运行日志窗口 |
-| `:MaaPipelineVisionClean` | 删除 `<data_dir>/logs/vision` 下累积的识别标注截图 |
-| `:MaaPipelineLogFilter [expression]` | 使用 Lua 表达式过滤运行日志；空表达式清除过滤 |
-| `:MaaPipelineLogExportJson` | 将过滤后的运行日志导出为 JSON |
-| `:MaaPipelineLogExportText` | 将过滤后的运行日志导出为纯文本 |
+| `:MaaPISelectController` | 选择并配置 Maa 控制器 |
+| `:MaaPIStop` | 停止正在运行的 Maa 任务 |
+| `:MaaPIRunNode` | 运行光标所在的 Maa 任务 |
+| `:MaaPIRunPickBufferNode` | 从当前文件已声明的任务中选择并运行 |
+| `:MaaPIRunTask` | 选择 `interface.json` 中的任务，在面板中确认 option 后运行 |
+| `:MaaPIScreenshot` | 选择控制器、截图、裁剪，并保存图片或复制 ROI |
+| `:MaaPITrace` | 在标签页中打开节点追踪视图，底部同时显示运行日志窗口 |
+| `:MaaPIVisionClean` | 删除 `<data_dir>/logs/vision` 下累积的识别标注截图 |
+| `:MaaPILogFilter [expression]` | 使用 Lua 表达式过滤运行日志；空表达式清除过滤 |
+| `:MaaPILogExportJson` | 将过滤后的运行日志导出为 JSON |
+| `:MaaPILogExportText` | 将过滤后的运行日志导出为纯文本 |
 
 ## 代码操作
 
@@ -160,8 +160,8 @@ Windows 下 `maa-runtime` 会始终以管理员权限启动，因为 `Seize` 等
 
 ### 任务 Option
 
-节点运行（`:MaaPipelineRun`、`:MaaPipelinePickRun`、代码操作以及追踪里的 `r` 重跑）直接
-post 该 pipeline 节点，不弹 option。`:MaaPipelineTaskRun` 按上游客户端的方式运行任务：先
+节点运行（`:MaaPIRunNode`、`:MaaPIRunPickBufferNode`、代码操作以及追踪里的 `r` 重跑）直接
+post 该 pipeline 节点，不弹 option。`:MaaPIRunTask` 按上游客户端的方式运行任务：先
 列出 `interface.json` 声明的任务（label 经项目 `languages` 翻译文件本地化，限定其他
 `resource` 的任务隐藏），然后每次运行都为所选任务打开 option 面板，任务从面板以当前选择
 启动。
@@ -203,7 +203,7 @@ raw and raw:find("recognition", 1, true)
 
 ### 节点追踪
 
-`:MaaPipelineTrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务开始时该标签页也会自动打开。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。任务运行期间，日志窗口右侧会显示实时画面，约每秒刷新一次：优先显示最近一次识别的标注图（ROI 与结果框、OCR 结果），首次识别前显示原始截图。任务结束后保留最后一帧（需要终端图片支持）。
+`:MaaPITrace` 打开一个独立标签页：上方为节点追踪视图，底部窗口显示运行日志。任务开始时该标签页也会自动打开。任务运行时视图随 runtime 通知实时刷新，也可按 `r` 手动刷新。任务运行期间，日志窗口右侧会显示实时画面，约每秒刷新一次：优先显示最近一次识别的标注图（ROI 与结果框、OCR 结果），首次识别前显示原始截图。任务结束后保留最后一帧（需要终端图片支持）。
 
 每个执行过的节点显示状态与统计：
 
