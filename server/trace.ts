@@ -131,7 +131,6 @@ export class TraceCollector {
 
     if (category === "Task") {
       const entry = text(msg.entry);
-      if (entry === "MaaTaskerPostStop") return true;
       if (entry) this.task = entry;
       const taskId = number(msg.task_id);
       if (taskId !== undefined) this.taskId = taskId;

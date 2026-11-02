@@ -174,6 +174,37 @@ test("reuses a daemon instance while the controller type is unchanged", async (t
   assert.deepEqual(calls, ["fetchConstants", "setupInstance"]);
 });
 
+test("drops stop pseudo task notifications from the runtime log", async (t) => {
+  const { RuntimeClient } = await loadRuntimeClient(t);
+  const logs = [];
+  const client = new RuntimeClient({
+    sendNotification: (_method: string, params: any) => logs.push(params),
+  } as any);
+  const handlers: Record<string, any> = {};
+  client.bind({
+    onNotification: (type: any, handler: any) => {
+      handlers[type.method] = handler;
+    },
+    onRequest: (type: any, handler: any) => {
+      handlers[type.method] = handler;
+    },
+  } as any);
+
+  handlers.log("info", JSON.stringify({ msg: "Task.Starting", entry: "MaaTaskerPostStop" }));
+  handlers.log("info", JSON.stringify({ msg: "Task.Starting", entry: "VisitFriendsMain" }));
+  await handlers.subToHostReq("pushNotify", [
+    "inst",
+    { msg: "Task.Starting", entry: "MaaTaskerPostStop" },
+  ]);
+  await handlers.subToHostReq("pushNotify", [
+    "inst",
+    { msg: "Node.PipelineNode.Starting", name: "NodeA", task_id: 1, node_id: 2 },
+  ]);
+
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].entry.entry, "VisitFriendsMain");
+});
+
 test("feeds trace notifications to the collector and emits trace snapshots", async (t) => {
   const { RuntimeClient } = await loadRuntimeClient(t);
   const notifications = [];

@@ -41,6 +41,8 @@ export class RuntimeSetupError extends Error {
   }
 }
 
+const STOP_PSEUDO_TASK = "MaaTaskerPostStop";
+
 export function resolveFixedImage(config: any, root: string) {
   const fixed = config?.vscFixed;
   if (!fixed || typeof fixed.image !== "string") return config;
@@ -352,6 +354,7 @@ export class RuntimeClient {
       } catch {
         // entry stays null
       }
+      if ((entry as { entry?: unknown } | null)?.entry === STOP_PSEUDO_TASK) return;
       this.connection.sendNotification("maa-pipeline/runtimeLog", {
         level,
         message,
@@ -361,7 +364,7 @@ export class RuntimeClient {
     });
     rpc.onRequest(subToHostReq, async (method, args) => {
       if (method === "pushNotify") {
-        if ((args[1] as Record<string, unknown> | undefined)?.entry === "MaaTaskerPostStop") {
+        if ((args[1] as Record<string, unknown> | undefined)?.entry === STOP_PSEUDO_TASK) {
           return null;
         }
         try {
@@ -373,25 +376,6 @@ export class RuntimeClient {
             source: "maa-runtime",
           });
         }
-        const source = "maa-runtime";
-        let body: string;
-        try {
-          body = JSON.stringify(args[1]);
-        } catch {
-          body = String(args[1]);
-        }
-        let entry: unknown = null;
-        try {
-          entry = parseLogLine(`[info] ${body}`, source) ?? null;
-        } catch {
-          // entry stays null
-        }
-        this.connection.sendNotification("maa-pipeline/runtimeLog", {
-          level: "info",
-          message: body,
-          source,
-          entry,
-        });
         return null;
       }
       if (method === "startTask")
