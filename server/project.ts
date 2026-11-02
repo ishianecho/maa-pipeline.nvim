@@ -40,6 +40,7 @@ export class MaaProject {
   dirty = new Set<string>();
   queue: Promise<void> = Promise.resolve();
   ready = false;
+  revision = 0;
   lastPublishedUris = new Set<string>();
   config: any = {};
   controller = "";
@@ -99,7 +100,10 @@ export class MaaProject {
       "bundleReloaded",
       "pipelineChanged",
     ]) {
-      this.bundle.on(event, () => this.onChanged?.(this));
+      this.bundle.on(event, () => {
+        this.revision += 1;
+        this.onChanged?.(this);
+      });
     }
   }
 

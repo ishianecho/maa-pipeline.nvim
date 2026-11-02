@@ -80,6 +80,7 @@ export class RuntimeClient {
   agentOptions = new Map<string, boolean>();
   controllerType: string | null = null;
   daemonHandle: string | null = null;
+  daemonStale = false;
   readonly trace = new TraceCollector({
     onChange: (snapshot) => {
       this.connection.sendNotification("maa-pipeline/trace", snapshot);
@@ -649,7 +650,15 @@ export class RuntimeClient {
     agent.child.kill();
   }
 
+  invalidate() {
+    this.daemonStale = true;
+  }
+
   async setup(project: RuntimeProject) {
+    if (this.daemonStale) {
+      if (this.daemonHandle && !this.active) await this.destroyDaemon();
+      this.daemonStale = false;
+    }
     const controllerName =
       typeof project.config.controller === "string"
         ? project.config.controller

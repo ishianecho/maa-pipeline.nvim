@@ -129,9 +129,15 @@ async function forDocument(document) {
   return project;
 }
 
+const runtimeRevisions = new WeakMap();
+
 async function publish(project) {
   try {
     await project.refresh();
+    if (runtimeRevisions.get(project) !== project.revision) {
+      runtimeRevisions.set(project, project.revision);
+      runtime?.invalidate();
+    }
     const byUri = new Map();
     for (const diagnostic of performDiagnostic(project.bundle, {})) {
       const message = await buildDiagnosticMessage(
