@@ -47,6 +47,11 @@ function M.setup(start_client)
       image.tab_enter()
     end,
   })
+  autocmd("BufWinEnter", {
+    callback = function(args)
+      require("maa-pipeline.trace").guard(args.buf)
+    end,
+  })
 end
 
 return M

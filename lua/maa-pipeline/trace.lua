@@ -16,28 +16,10 @@ local state = {
   fold_levels = {},
 }
 
-local METRICS_COL = 60
 local MIN_NAME = 16
-
-local STATUS_TOKEN = {
-  succeeded = "hit",
-  running = "run",
-  failed = "fail",
-  missed = "miss",
-}
 
 local function current_client()
   return state.client_id and vim.lsp.get_client_by_id(state.client_id) or nil
-end
-
-local function fmt_duration(ms)
-  if not ms then
-    return ""
-  end
-  if ms < 1000 then
-    return string.format("%dms", ms)
-  end
-  return string.format("%.1fs", ms / 1000)
 end
 
 local function metric_cell(text, width)
@@ -64,71 +46,11 @@ local function format_row(col, prefix, name, cells)
   return (line .. table.concat(cells)):gsub("%s+$", "")
 end
 
-local function configure_highlights()
-  highlights.define()
-end
+local tab_marker = "maa_pipeline_trace"
+local restored = {}
 
 local function current_entry()
   return state.line_entries[vim.api.nvim_win_get_cursor(0)[1]]
-end
-
-local function jump_to_node()
-  local entry = current_entry()
-  if not entry then
-    return
-  end
-  local client = current_client()
-  if not client then
-    vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
-    return
-  end
-  client:request("workspace/symbol", { query = entry.name }, function(error, symbols)
-    vim.schedule(function()
-      if error then
-        vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
-        return
-      end
-      local exact = vim.tbl_filter(function(item)
-        return item.name == entry.name
-      end, symbols or {})
-      local matches = #exact > 0 and exact or (symbols or {})
-      local location = matches[1] and matches[1].location
-      if not location then
-        vim.notify("No definition found for " .. entry.name, vim.log.levels.WARN)
-        return
-      end
-      local file = vim.uri_to_fname(location.uri)
-      vim.cmd("tab drop " .. vim.fn.fnameescape(file))
-      vim.api.nvim_win_set_cursor(0, { location.range.start.line + 1, location.range.start.character })
-    end)
-  end)
-end
-
-local function open_reco()
-  local entry = current_entry()
-  local client = current_client()
-  if not client then
-    vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
-    return
-  end
-  if not entry or type(entry.lastRecoId) ~= "number" then
-    vim.notify("No recognition detail on this line", vim.log.levels.WARN)
-    return
-  end
-  require("maa-pipeline.reco").show(client, entry.lastRecoId)
-end
-
-local function rerun_node()
-  local entry = current_entry()
-  if not entry then
-    return
-  end
-  local client = current_client()
-  if not client then
-    vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
-    return
-  end
-  api.request(client, "maa-pipeline.runTask", { client.config.root_dir, entry.name })
 end
 
 local function sync_screenshot(snapshot)
@@ -151,19 +73,6 @@ local function refresh()
   end)
 end
 
-local legend = {
-  "Legend:",
-  "  hit    node matched and executed",
-  "  run    node currently running",
-  "  fail   node failed",
-  "  miss   node finished without ever matching",
-  "  [JumpBack] after the status token: the subtree returns to the parent",
-  "  node when it ends",
-  "  [Anchor:x] after the status token: matched through the anchor alias x",
-  "  metric columns: action, executions, recognition attempts, and the total",
-  "  duration",
-}
-
 local function ensure_buffer()
   local buffer = vim.fn.bufnr(buffer_name)
   if buffer < 0 then
@@ -173,9 +82,62 @@ local function ensure_buffer()
     vim.bo[buffer].bufhidden = "hide"
     vim.bo[buffer].swapfile = false
     keymap.setup("trace", buffer, {
-      jump = jump_to_node,
-      reco = open_reco,
-      rerun = rerun_node,
+      jump = function()
+        local entry = current_entry()
+        if not entry then
+          return
+        end
+        local client = current_client()
+        if not client then
+          vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+          return
+        end
+        client:request("workspace/symbol", { query = entry.name }, function(error, symbols)
+          vim.schedule(function()
+            if error then
+              vim.notify(error.message or tostring(error), vim.log.levels.ERROR)
+              return
+            end
+            local exact = vim.tbl_filter(function(item)
+              return item.name == entry.name
+            end, symbols or {})
+            local matches = #exact > 0 and exact or (symbols or {})
+            local location = matches[1] and matches[1].location
+            if not location then
+              vim.notify("No definition found for " .. entry.name, vim.log.levels.WARN)
+              return
+            end
+            local file = vim.uri_to_fname(location.uri)
+            vim.cmd("tab drop " .. vim.fn.fnameescape(file))
+            vim.api.nvim_win_set_cursor(0, { location.range.start.line + 1, location.range.start.character })
+          end)
+        end)
+      end,
+      reco = function()
+        local entry = current_entry()
+        local client = current_client()
+        if not client then
+          vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+          return
+        end
+        if not entry or type(entry.lastRecoId) ~= "number" then
+          vim.notify("No recognition detail on this line", vim.log.levels.WARN)
+          return
+        end
+        require("maa-pipeline.reco").show(client, entry.lastRecoId)
+      end,
+      rerun = function()
+        local entry = current_entry()
+        if not entry then
+          return
+        end
+        local client = current_client()
+        if not client then
+          vim.notify("maa_pipeline is not running", vim.log.levels.WARN)
+          return
+        end
+        api.request(client, "maa-pipeline.runTask", { client.config.root_dir, entry.name })
+      end,
       refresh = refresh,
       close = function()
         pcall(vim.cmd, "close")
@@ -183,68 +145,40 @@ local function ensure_buffer()
       help = M.toggle_help,
     })
   end
-  configure_highlights()
+  highlights.define()
   return buffer
 end
 
-local function render_snapshot(lines)
-  local snapshot = state.snapshot
-
-  local function add(line, entry)
-    table.insert(lines, line)
-    state.line_entries[#lines] = entry
-  end
-
-  local hint = help.hint("trace")
-  if hint then
-    add(hint, nil)
-  end
-  if not snapshot then
-    add("No Maa task traced yet; run a task and press " .. keymap.get("trace", "refresh") .. " to refresh", nil)
-  else
-    add(string.format("Task: %s (%s)", snapshot.task or "?", snapshot.running and "running" or "finished"), nil)
-    add("", nil)
-    local col = METRICS_COL
-    local prefixes = {}
-    for i, entry in ipairs(snapshot.entries or {}) do
-      local prefix = string.format("%s[%-4s]", ("  "):rep(entry.depth or 0), STATUS_TOKEN[entry.status] or "?")
-      if entry.jumpBack == true then
-        prefix = prefix .. " [JumpBack]"
-      end
-      if type(entry.anchor) == "string" then
-        prefix = prefix .. " [Anchor:" .. entry.anchor .. "]"
-      end
-      prefixes[i] = prefix
-      col = math.max(col, #prefix + 1 + #entry.name)
+function M.guard(buf)
+  for win in pairs(restored) do
+    if not vim.api.nvim_win_is_valid(win) then
+      restored[win] = nil
     end
-    add(
-      format_row(col, "[    ]", "NODE", {
-        metric_cell("ACTION", 11),
-        metric_cell("RUNS", 5),
-        metric_cell("TRY", 5),
-        metric_cell("TIME", 7),
-      }),
-      nil
-    )
-    local fold_rows = {}
-    local fold_depths = {}
-    for i, entry in ipairs(snapshot.entries or {}) do
-      add(
-        format_row(col, prefixes[i], entry.name, {
-          metric_cell(type(entry.action) == "string" and entry.action or "", 11),
-          metric_cell(entry.executions > 0 and tostring(entry.executions) or "", 5),
-          metric_cell(entry.attempts > 0 and tostring(entry.attempts) or "", 5),
-          metric_cell(fmt_duration(entry.durationMs), 7),
-        }),
-        entry
-      )
-      table.insert(fold_rows, #lines)
-      table.insert(fold_depths, entry.depth or 0)
-    end
-    for i, row in ipairs(fold_rows) do
-      local depth = fold_depths[i]
-      local deeper = i < #fold_rows and fold_depths[i + 1] > depth
-      state.fold_levels[row] = deeper and (">" .. (depth + 1)) or tostring(depth)
+  end
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    local tab = vim.api.nvim_win_get_tabpage(win)
+    if vim.t[tab][tab_marker] then
+      local ok, config = pcall(vim.api.nvim_win_get_config, win)
+      if ok and config.relative == "" then
+        local owned = vim.bo[buf].buftype ~= ""
+        if not owned then
+          local name = vim.api.nvim_buf_get_name(buf)
+          owned = name == "" or name:sub(1, 14) == "maa-pipeline://"
+        end
+        if owned then
+          restored[win] = buf
+        else
+          local previous = restored[win]
+          if previous then
+            vim.api.nvim_win_set_buf(win, previous)
+          elseif #vim.api.nvim_tabpage_list_wins(tab) > 1 then
+            vim.api.nvim_win_close(win, false)
+          else
+            vim.api.nvim_win_set_buf(win, ensure_buffer())
+          end
+          vim.cmd("tab sbuffer " .. buf)
+        end
+      end
     end
   end
 end
@@ -278,9 +212,88 @@ function M.render()
 
   local marks
   if state.help then
-    lines, marks = help.lines("Maa pipeline trace", "trace", { legend })
+    lines, marks = help.lines("Maa pipeline trace", "trace", { {
+      "Legend:",
+      "  hit    node matched and executed",
+      "  run    node currently running",
+      "  fail   node failed",
+      "  miss   node finished without ever matching",
+      "  [JumpBack] after the status token: the subtree returns to the parent",
+      "  node when it ends",
+      "  [Anchor:x] after the status token: matched through the anchor alias x",
+      "  metric columns: action, executions, recognition attempts, and the total",
+      "  duration",
+    } })
   else
-    render_snapshot(lines)
+    local snapshot = state.snapshot
+
+    local function add(line, entry)
+      table.insert(lines, line)
+      state.line_entries[#lines] = entry
+    end
+
+    local hint = help.hint("trace")
+    if hint then
+      add(hint, nil)
+    end
+    if not snapshot then
+      add("No Maa task traced yet; run a task and press " .. keymap.get("trace", "refresh") .. " to refresh", nil)
+    else
+      add(string.format("Task: %s (%s)", snapshot.task or "?", snapshot.running and "running" or "finished"), nil)
+      add("", nil)
+      local status_token = {
+        succeeded = "hit",
+        running = "run",
+        failed = "fail",
+        missed = "miss",
+      }
+      local col = 60
+      local prefixes = {}
+      for i, entry in ipairs(snapshot.entries or {}) do
+        local prefix = string.format("%s[%-4s]", ("  "):rep(entry.depth or 0), status_token[entry.status] or "?")
+        if entry.jumpBack == true then
+          prefix = prefix .. " [JumpBack]"
+        end
+        if type(entry.anchor) == "string" then
+          prefix = prefix .. " [Anchor:" .. entry.anchor .. "]"
+        end
+        prefixes[i] = prefix
+        col = math.max(col, #prefix + 1 + #entry.name)
+      end
+      add(
+        format_row(col, "[    ]", "NODE", {
+          metric_cell("ACTION", 11),
+          metric_cell("RUNS", 5),
+          metric_cell("TRY", 5),
+          metric_cell("TIME", 7),
+        }),
+        nil
+      )
+      local fold_rows = {}
+      local fold_depths = {}
+      for i, entry in ipairs(snapshot.entries or {}) do
+        local duration = entry.durationMs
+        local duration_text = duration
+            and (duration < 1000 and string.format("%dms", duration) or string.format("%.1fs", duration / 1000))
+            or ""
+        add(
+          format_row(col, prefixes[i], entry.name, {
+            metric_cell(type(entry.action) == "string" and entry.action or "", 11),
+            metric_cell(entry.executions > 0 and tostring(entry.executions) or "", 5),
+            metric_cell(entry.attempts > 0 and tostring(entry.attempts) or "", 5),
+            metric_cell(duration_text, 7),
+          }),
+          entry
+        )
+        table.insert(fold_rows, #lines)
+        table.insert(fold_depths, entry.depth or 0)
+      end
+      for i, row in ipairs(fold_rows) do
+        local depth = fold_depths[i]
+        local deeper = i < #fold_rows and fold_depths[i + 1] > depth
+        state.fold_levels[row] = deeper and (">" .. (depth + 1)) or tostring(depth)
+      end
+    end
   end
 
   vim.bo[buffer].modifiable = true
@@ -310,7 +323,7 @@ function M.update(client_id, snapshot)
   state.snapshot = snapshot
   sync_screenshot(snapshot)
   local buffer = vim.fn.bufnr(buffer_name)
-  if buffer >= 0 and vim.fn.bufwinid(buffer) >= 0 and not state.help then
+  if buffer >= 0 and #vim.fn.win_findbuf(buffer) > 0 and not state.help then
     M.render()
   end
 end
@@ -321,15 +334,26 @@ function M.show(client_id)
   if state.snapshot ~= nil then
     M.render()
   end
-  local windows = vim.api.nvim_list_wins()
-  for _, win in ipairs(windows) do
+  local tab
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    local win_tab = vim.api.nvim_win_get_tabpage(win)
     if vim.api.nvim_win_get_buf(win) == buffer then
+      vim.t[win_tab][tab_marker] = true
       vim.api.nvim_set_current_win(win)
       refresh()
       return
     end
+    if not tab and vim.t[win_tab][tab_marker] then
+      tab = win_tab
+    end
   end
-  vim.cmd("tabnew")
+  if tab then
+    vim.api.nvim_set_current_tabpage(tab)
+    vim.cmd("topleft split")
+  else
+    vim.cmd("tabnew")
+    vim.t[tab_marker] = true
+  end
   vim.api.nvim_set_current_buf(buffer)
   apply_folds(buffer)
   require("maa-pipeline.log").show(client_id)
