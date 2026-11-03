@@ -442,7 +442,8 @@ export class RuntimeClient {
     if (!controller) throw new Error(`Unknown controller ${name}`);
     if (controller.type === "Adb") {
       await this.ensure(project);
-      const devices = await this.request<any[]>("refreshAdb", project.config.adb?.adb_path);
+      const adbPath = project.config.adb?.adb_path;
+      const devices = await this.request<any[]>("refreshAdb", ...(adbPath ? [adbPath] : []));
       return {
         items: devices.map((device) => ({
           label: `${device[0]} — ${device[2]}`,
