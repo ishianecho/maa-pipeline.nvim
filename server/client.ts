@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { access, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import { homedir } from "node:os";
@@ -16,7 +17,7 @@ import {
 import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc";
 
 import { resolveAgent, runtimeAgents } from "./agent.ts";
-import { encodeBase64Json, jpegDimensions, pngDimensions } from "./utils.ts";
+import { encodeBase64Json, isRegularFile, jpegDimensions, pngDimensions } from "./utils.ts";
 import { formatRuntimeLogLine, parseLogLine } from "./log.ts";
 import { TraceCollector, type RecoDetailInfo, type RecoDetailResult } from "./trace.ts";
 import type {
@@ -50,11 +51,21 @@ export function resolveFixedImage(config: any, root: string) {
   return { ...config, vscFixed: { ...fixed, image: path.resolve(root, image) } };
 }
 
-function runtimeConfig(project: RuntimeProject, constants: any) {
+function resolveAgentDir(bindingPath: string | null): string | null {
+  if (!bindingPath) return null;
+  const candidates = [path.join(bindingPath, "MaaAgentBinary"), path.join(bindingPath, "agent")];
+  return candidates.find((dir) => existsSync(path.join(dir, "maatouch", "universal"))) ?? null;
+}
+
+function runtimeConfig(project: RuntimeProject, constants: any, bindingPath: string | null) {
   const data = project.bundle.content.object;
   const config = resolveFixedImage(project.config, project.root);
   const controller = buildControllerRuntime(data, config, constants);
   if (typeof controller === "string") throw new Error(controller);
+  if (controller.type === "adb") {
+    const agent = resolveAgentDir(bindingPath);
+    if (agent) controller.args.push(agent);
+  }
   const resource = buildResourceRuntime(data, config);
   if (typeof resource === "string") throw new Error(resource);
   return {
@@ -90,6 +101,7 @@ export class RuntimeClient {
   failedAgents = new Set<string>();
   agentOptions = new Map<string, boolean>();
   controllerType: string | null = null;
+  maaLogDir: string | null = null;
   daemonHandle: string | null = null;
   daemonStale = false;
   readonly trace = new TraceCollector({
@@ -233,10 +245,21 @@ export class RuntimeClient {
     });
   }
 
+  private async resolveMaaLogDir(project: RuntimeProject): Promise<string> {
+    for (const agent of runtimeAgents(project)) {
+      const resolved = await resolveAgent(agent.child_exec, project.root);
+      if (await isRegularFile(resolved.executable)) {
+        return path.join(resolved.cwd, "debug", "maafw");
+      }
+    }
+    return path.join(this.options.dataDir!, "logs");
+  }
+
   async ensure(project: RuntimeProject) {
     if (this.rpc) return this.rpc;
     await this.prepare(project);
-    await mkdir(path.join(this.options.dataDir!, "logs"), { recursive: true });
+    this.maaLogDir = await this.resolveMaaLogDir(project);
+    await mkdir(this.maaLogDir, { recursive: true });
 
     const server = net.createServer();
     await new Promise<void>((resolve, reject) => {
@@ -274,7 +297,7 @@ export class RuntimeClient {
         id,
         port: address.port,
         ...(this.bindingPath ? { binding: this.bindingPath } : { module: this.modulePath! }),
-        maaLog: path.join(this.options.dataDir!, "logs"),
+        maaLog: this.maaLogDir,
         debugMode: this.options.debugMode,
         saveDraw: this.options.saveDraw,
         saveOnError: this.options.saveOnError,
@@ -671,7 +694,7 @@ export class RuntimeClient {
     if (this.daemonHandle) await this.destroyDaemon();
 
     const constants = await this.request("fetchConstants");
-    const config = runtimeConfig(project, constants);
+    const config = runtimeConfig(project, constants, this.bindingPath);
     this.controllerType = controllerType;
     this.agentOptions = new Map(config.agent.map((agent) => [agent.child_exec, false]));
     const setup = await this.request<RuntimeSetupResult>(
@@ -825,7 +848,8 @@ export class RuntimeClient {
 
   async cleanVision() {
     if (!this.options.dataDir) throw new Error("init_options.runtime.data_dir is required");
-    await rm(path.join(this.options.dataDir, "logs", "vision"), { recursive: true, force: true });
+    const logDir = this.maaLogDir ?? path.join(this.options.dataDir, "logs");
+    await rm(path.join(logDir, "vision"), { recursive: true, force: true });
   }
 
   async stop() {
